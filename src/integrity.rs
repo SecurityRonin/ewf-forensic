@@ -7,9 +7,22 @@ const VOLUME_DATA_MIN: usize = 24;
 
 /// Known EWF v1 section type strings.
 const KNOWN_TYPES: &[&str] = &[
-    "header", "header2", "volume", "disk", "table", "table2",
-    "sectors", "hash", "digest", "error2", "session", "done", "next",
-    "data", "ltree", "ltreedata",
+    "header",
+    "header2",
+    "volume",
+    "disk",
+    "table",
+    "table2",
+    "sectors",
+    "hash",
+    "digest",
+    "error2",
+    "session",
+    "done",
+    "next",
+    "data",
+    "ltree",
+    "ltreedata",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,18 +140,16 @@ impl<'a> EwfIntegrity<'a> {
         let sections = self.walk_sections(&mut issues);
 
         // ── Layer 4: Volume geometry ──────────────────────────────────────────
-        let volume = sections.iter().find(|s| s.type_name == "volume" || s.type_name == "disk");
-        let chunk_count_from_volume: Option<u32>;
-        match volume {
+        let volume = sections
+            .iter()
+            .find(|s| s.type_name == "volume" || s.type_name == "disk");
+        let chunk_count_from_volume: Option<u32> = match volume {
             None => {
                 issues.push(EwfIntegrityAnomaly::VolumeSectionMissing);
-                chunk_count_from_volume = None;
+                None
             }
-            Some(vol) => {
-                chunk_count_from_volume =
-                    self.check_volume(vol.offset, &mut issues);
-            }
-        }
+            Some(vol) => self.check_volume(vol.offset, &mut issues),
+        };
 
         // ── Layer 5: Table integrity ──────────────────────────────────────────
         if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
@@ -251,8 +262,8 @@ impl<'a> EwfIntegrity<'a> {
                 break;
             }
 
-            // Validate next pointer.
-            if next == 0 || next > file_size {
+            // Validate next pointer — must advance forward (no cycles or zero).
+            if next == 0 || next > file_size || next <= pos {
                 issues.push(EwfIntegrityAnomaly::SectionChainBroken {
                     at_offset: pos,
                     next_offset: next,
@@ -285,11 +296,7 @@ impl<'a> EwfIntegrity<'a> {
         sections
     }
 
-    fn check_volume(
-        &self,
-        desc_offset: u64,
-        issues: &mut Vec<EwfIntegrityAnomaly>,
-    ) -> Option<u32> {
+    fn check_volume(&self, desc_offset: u64, issues: &mut Vec<EwfIntegrityAnomaly>) -> Option<u32> {
         let data_start = (desc_offset as usize) + SECTION_DESCRIPTOR_SIZE;
         let data = self.data;
         if data.len() < data_start + VOLUME_DATA_MIN {

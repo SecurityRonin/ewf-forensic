@@ -2,13 +2,7 @@ mod builder;
 
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, Severity};
 
-use builder::{adler32, E01Builder, EVF_SIGNATURE, SECTION_DESCRIPTOR_SIZE};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Offset of the volume section descriptor in a standard builder image.
-/// File header (13) + ewf_header desc (76) + ewf_header data (1) = 90 = 0x5A
-const VOLUME_DESC_OFF: usize = 90;
+use builder::{E01Builder, EVF_SIGNATURE};
 
 fn clean_image() -> Vec<u8> {
     E01Builder::new(512 * 64).build() // one chunk of 32 KB
@@ -32,9 +26,7 @@ fn clean_e01_has_no_anomalies() {
 fn invalid_signature_detected() {
     let mut sig = EVF_SIGNATURE;
     sig[0] = 0x00;
-    let image = E01Builder::new(512 * 64)
-        .with_signature(sig)
-        .build();
+    let image = E01Builder::new(512 * 64).with_signature(sig).build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
         findings
@@ -47,9 +39,7 @@ fn invalid_signature_detected() {
 // Test 3: segment number zero is invalid
 #[test]
 fn segment_number_zero_detected() {
-    let image = E01Builder::new(512 * 64)
-        .with_segment_number(0)
-        .build();
+    let image = E01Builder::new(512 * 64).with_segment_number(0).build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
         findings
@@ -64,15 +54,12 @@ fn segment_number_zero_detected() {
 // Test 4: corrupt section descriptor CRC → SectionDescriptorCrcMismatch
 #[test]
 fn section_descriptor_crc_mismatch_detected() {
-    let image = E01Builder::new(512 * 64)
-        .with_corrupt_volume_crc()
-        .build();
+    let image = E01Builder::new(512 * 64).with_corrupt_volume_crc().build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
-        findings.iter().any(|a| matches!(
-            a,
-            EwfIntegrityAnomaly::SectionDescriptorCrcMismatch { .. }
-        )),
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::SectionDescriptorCrcMismatch { .. })),
         "expected SectionDescriptorCrcMismatch, got: {findings:#?}"
     );
 }
@@ -80,15 +67,12 @@ fn section_descriptor_crc_mismatch_detected() {
 // Test 5: section chain next pointer beyond EOF → SectionChainBroken
 #[test]
 fn section_chain_broken_detected() {
-    let image = E01Builder::new(512 * 64)
-        .with_broken_chain()
-        .build();
+    let image = E01Builder::new(512 * 64).with_broken_chain().build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
-        findings.iter().any(|a| matches!(
-            a,
-            EwfIntegrityAnomaly::SectionChainBroken { .. }
-        )),
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::SectionChainBroken { .. })),
         "expected SectionChainBroken, got: {findings:#?}"
     );
 }
@@ -96,15 +80,12 @@ fn section_chain_broken_detected() {
 // Test 6: inter-section gap (non-section bytes between sections) → SectionGapNonZero
 #[test]
 fn section_gap_nonzero_detected() {
-    let image = E01Builder::new(512 * 64)
-        .with_gap()
-        .build();
+    let image = E01Builder::new(512 * 64).with_gap().build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
-        findings.iter().any(|a| matches!(
-            a,
-            EwfIntegrityAnomaly::SectionGapNonZero { .. }
-        )),
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::SectionGapNonZero { .. })),
         "expected SectionGapNonZero, got: {findings:#?}"
     );
 }
@@ -114,9 +95,7 @@ fn section_gap_nonzero_detected() {
 // Test 7: no volume section → VolumeSectionMissing
 #[test]
 fn volume_section_missing_detected() {
-    let image = E01Builder::new(512 * 64)
-        .with_omit_volume()
-        .build();
+    let image = E01Builder::new(512 * 64).with_omit_volume().build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
         findings
@@ -129,9 +108,7 @@ fn volume_section_missing_detected() {
 // Test 8: unrecognised section type → UnknownSectionType
 #[test]
 fn unknown_section_type_detected() {
-    let image = E01Builder::new(512 * 64)
-        .with_volume_type("xyzzy")
-        .build();
+    let image = E01Builder::new(512 * 64).with_volume_type("xyzzy").build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
         findings
@@ -144,9 +121,7 @@ fn unknown_section_type_detected() {
 // Test 9: done section absent → DoneSectionMissing
 #[test]
 fn done_section_missing_detected() {
-    let image = E01Builder::new(512 * 64)
-        .with_omit_done()
-        .build();
+    let image = E01Builder::new(512 * 64).with_omit_done().build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
         findings
@@ -208,15 +183,12 @@ fn bytes_per_sector_invalid_detected() {
 // Test 13: table entry_count differs from volume chunk_count → TableChunkCountMismatch
 #[test]
 fn table_chunk_count_mismatch_detected() {
-    let image = E01Builder::new(512 * 64)
-        .with_table_chunk_count(99)
-        .build();
+    let image = E01Builder::new(512 * 64).with_table_chunk_count(99).build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
-        findings.iter().any(|a| matches!(
-            a,
-            EwfIntegrityAnomaly::TableChunkCountMismatch { .. }
-        )),
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::TableChunkCountMismatch { .. })),
         "expected TableChunkCountMismatch, got: {findings:#?}"
     );
 }
@@ -230,14 +202,12 @@ fn table_entry_out_of_bounds_detected() {
     // = 260. Table header (24) follows, then entries at 260+76+24 = 360.
     let table_entry_off = 13 + 77 + 170 + 76 + 24;
     // Write a huge offset (bit31=0 so not-compressed flag doesn't confuse)
-    image[table_entry_off..table_entry_off + 4]
-        .copy_from_slice(&0x7FFF_FFFFu32.to_le_bytes());
+    image[table_entry_off..table_entry_off + 4].copy_from_slice(&0x7FFF_FFFFu32.to_le_bytes());
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
-        findings.iter().any(|a| matches!(
-            a,
-            EwfIntegrityAnomaly::TableEntryOutOfBounds { .. }
-        )),
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::TableEntryOutOfBounds { .. })),
         "expected TableEntryOutOfBounds, got: {findings:#?}"
     );
 }
@@ -336,7 +306,9 @@ fn severity_levels_correct() {
             Error,
         ),
         (
-            EwfIntegrityAnomaly::BytesPerSectorInvalid { bytes_per_sector: 1024 },
+            EwfIntegrityAnomaly::BytesPerSectorInvalid {
+                bytes_per_sector: 1024,
+            },
             Error,
         ),
         (

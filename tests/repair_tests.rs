@@ -1,7 +1,7 @@
 mod builder;
 
-use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, EwfRepair};
 use builder::E01Builder;
+use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, EwfRepair};
 
 fn clean_image() -> Vec<u8> {
     E01Builder::new(512 * 64).build()
@@ -12,7 +12,10 @@ fn clean_image() -> Vec<u8> {
 fn repair_clean_image_no_repairs() {
     let image = clean_image();
     let result = EwfRepair::new(image).repair();
-    assert!(result.repairs.is_empty(), "clean image should need no repairs");
+    assert!(
+        result.repairs.is_empty(),
+        "clean image should need no repairs"
+    );
     assert!(
         result.cannot_repair.is_empty(),
         "clean image should have no unrepairable issues"
@@ -24,7 +27,10 @@ fn repair_clean_image_no_repairs() {
 fn repair_crc_mismatch_is_repaired() {
     let image = E01Builder::new(512 * 64).with_corrupt_volume_crc().build();
     let result = EwfRepair::new(image).repair();
-    assert!(!result.repairs.is_empty(), "expected at least one repair action");
+    assert!(
+        !result.repairs.is_empty(),
+        "expected at least one repair action"
+    );
     // After repair, running integrity should find no CRC errors
     let post = EwfIntegrity::new(&result.data).analyse();
     assert!(

@@ -17,7 +17,10 @@ pub enum Repaired {
 
 #[derive(Debug, Clone)]
 pub enum CannotRepair {
-    HashMismatch { computed: [u8; 16], stored: [u8; 16] },
+    HashMismatch {
+        computed: [u8; 16],
+        stored: [u8; 16],
+    },
 }
 
 impl EwfRepair {

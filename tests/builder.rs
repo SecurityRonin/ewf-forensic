@@ -1,22 +1,21 @@
-/// Synthetic E01 builder for testing.
-///
-/// EWF v1 layout (single segment, single chunk for simplicity):
-///   [0x000]  File Header      13 bytes
-///   [0x00D]  Section 1 desc   76 bytes  ("header" — metadata string)
-///   [0x059]  Section 1 data   variable
-///   [???]    Volume desc      76 bytes
-///   [???]    Volume data      94 bytes
-///   [???]    Table desc       76 bytes
-///   [???]    Table header     24 bytes
-///   [???]    Table entries    4 × chunk_count bytes
-///   [???]    Sectors desc     76 bytes
-///   [???]    Sectors data     chunk bytes (uncompressed for simplicity)
-///   [???]    Hash desc        76 bytes
-///   [???]    Hash data        16 bytes (MD5)
-///   [???]    Done desc        76 bytes  (next == self)
-
+//! Synthetic E01 builder for testing.
+//!
+//! EWF v1 layout (single segment, single chunk for simplicity):
+//!   [0x000]  File Header      13 bytes
+//!   [0x00D]  Section 1 desc   76 bytes  ("header" — metadata string)
+//!   [0x059]  Section 1 data   variable
+//!   [???]    Volume desc      76 bytes
+//!   [???]    Volume data      94 bytes
+//!   [???]    Table desc       76 bytes
+//!   [???]    Table header     24 bytes
+//!   [???]    Table entries    4 × chunk_count bytes
+//!   [???]    Sectors desc     76 bytes
+//!   [???]    Sectors data     chunk bytes (uncompressed for simplicity)
+//!   [???]    Hash desc        76 bytes
+//!   [???]    Hash data        16 bytes (MD5)
+//!   [???]    Done desc        76 bytes  (next == self)
+#![allow(dead_code)] // pub builder API — methods called from peer test binaries
 use md5::{Digest as _, Md5};
-use std::io::Write as _;
 
 /// EWF v1 signature: "EVF\x09\x0d\x0a\xff\x00"
 pub const EVF_SIGNATURE: [u8; 8] = [0x45, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
@@ -186,9 +185,8 @@ impl E01Builder {
         // File header: 13
         // ewf "header" section: desc(76) + minimal ascii metadata(1)
         let header_section_data_size: u64 = 1; // minimal placeholder
-        // Volume section (optional)
-        let volume_section_size: u64 =
-            (SECTION_DESCRIPTOR_SIZE + VOLUME_DATA_SIZE) as u64;
+                                               // Volume section (optional)
+        let volume_section_size: u64 = (SECTION_DESCRIPTOR_SIZE + VOLUME_DATA_SIZE) as u64;
         // Table section: desc(76) + table_header(24) + entries(4*n)
         let table_data_size: u64 = 24 + 4 * u64::from(chunk_count);
         let table_section_size = SECTION_DESCRIPTOR_SIZE as u64 + table_data_size;
@@ -203,9 +201,8 @@ impl E01Builder {
         // Build section chain offsets
         let mut pos: u64 = FILE_HEADER_SIZE as u64;
 
-        let ewf_header_desc_off = pos;
-        let ewf_header_section_size =
-            SECTION_DESCRIPTOR_SIZE as u64 + header_section_data_size;
+        let _ewf_header_desc_off = pos;
+        let ewf_header_section_size = SECTION_DESCRIPTOR_SIZE as u64 + header_section_data_size;
         pos += ewf_header_section_size;
 
         let volume_desc_off = pos;
@@ -255,12 +252,8 @@ impl E01Builder {
 
         // Volume section
         if !self.omit_volume {
-            let vol_type = self
-                .volume_type_override
-                .as_deref()
-                .unwrap_or("volume");
-            let mut desc =
-                make_section_descriptor(vol_type, table_desc_off, volume_section_size);
+            let vol_type = self.volume_type_override.as_deref().unwrap_or("volume");
+            let mut desc = make_section_descriptor(vol_type, table_desc_off, volume_section_size);
             if self.corrupt_volume_crc {
                 desc[72] ^= 0xFF;
             }
@@ -285,9 +278,7 @@ impl E01Builder {
         }
 
         // Table section descriptor + data
-        let table_chunk_count = self
-            .table_chunk_count_override
-            .unwrap_or(chunk_count);
+        let table_chunk_count = self.table_chunk_count_override.unwrap_or(chunk_count);
         buf.extend_from_slice(&make_section_descriptor(
             "table",
             sectors_desc_off,
@@ -296,8 +287,8 @@ impl E01Builder {
         // Table header (24 bytes)
         let mut tbl_hdr = vec![0u8; 24];
         tbl_hdr[0..4].copy_from_slice(&table_chunk_count.to_le_bytes()); // entry_count
-        // padding [4..8] = 0
-        // base_offset [8..16] — absolute offset where chunk data starts (sectors data body)
+                                                                         // padding [4..8] = 0
+                                                                         // base_offset [8..16] — absolute offset where chunk data starts (sectors data body)
         let sectors_data_start = sectors_desc_off + SECTION_DESCRIPTOR_SIZE as u64;
         tbl_hdr[8..16].copy_from_slice(&sectors_data_start.to_le_bytes());
         // checksum [16..24]: adler32 of first 16 bytes then the entries
@@ -336,10 +327,10 @@ impl E01Builder {
 
         // Optional gap (16 non-zero bytes between sections)
         if self.insert_gap {
-            buf.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF,
-                                    0xCA, 0xFE, 0xBA, 0xBE,
-                                    0x13, 0x37, 0x00, 0x00,
-                                    0x00, 0x00, 0x00, 0x01]);
+            buf.extend_from_slice(&[
+                0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0x13, 0x37, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x01,
+            ]);
         }
 
         // Hash section
