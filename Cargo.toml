@@ -1,6 +1,19 @@
 [package]
 name = "ewf-forensic"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+rust-version = "1.82"
+description = "Forensic integrity analysis and repair for EWF (Expert Witness Format / E01) images"
+license = "MIT"
+repository = "https://github.com/SecurityRonin/ewf-forensic"
+authors = ["Albert Hui"]
+keywords = ["forensics", "ewf", "e01", "integrity", "tampering"]
+categories = ["parser-implementations"]
+
+[lib]
+name = "ewf_forensic"
 
 [dependencies]
+
+[dev-dependencies]
+tempfile = "3"
