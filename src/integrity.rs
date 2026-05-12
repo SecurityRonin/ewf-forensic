@@ -1,6 +1,8 @@
+use md5::{Digest as _, Md5};
+
 const EVF_SIGNATURE: [u8; 8] = [0x45, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
 const FILE_HEADER_SIZE: usize = 13;
-const SECTION_DESCRIPTOR_SIZE: usize = 76;
+pub(crate) const SECTION_DESCRIPTOR_SIZE: usize = 76;
 const VOLUME_DATA_MIN: usize = 24;
 
 /// Known EWF v1 section type strings.
@@ -153,7 +155,47 @@ impl<'a> EwfIntegrity<'a> {
             issues.push(EwfIntegrityAnomaly::DoneSectionMissing);
         }
 
+        // ── Layer 7: Hash verification ────────────────────────────────────────
+        self.check_hash(&sections, &mut issues);
+
         issues
+    }
+
+    fn check_hash(&self, sections: &[Section], issues: &mut Vec<EwfIntegrityAnomaly>) {
+        let data = self.data;
+
+        let hash_sec = sections.iter().find(|s| s.type_name == "hash");
+        if hash_sec.is_none() {
+            issues.push(EwfIntegrityAnomaly::HashSectionMissing);
+            return;
+        }
+        let hash_sec = hash_sec.unwrap();
+
+        // The sectors section body is everything between the sectors descriptor and
+        // the next section.  Use size field: body = size - SECTION_DESCRIPTOR_SIZE.
+        let sectors_sec = match sections.iter().find(|s| s.type_name == "sectors") {
+            Some(s) => s,
+            None => return,
+        };
+        let body_start = (sectors_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
+        let body_len = (sectors_sec.size as usize).saturating_sub(SECTION_DESCRIPTOR_SIZE);
+        let sectors_body = match data.get(body_start..body_start + body_len) {
+            Some(b) => b,
+            None => return,
+        };
+
+        let computed: [u8; 16] = Md5::digest(sectors_body).into();
+
+        let hash_body_start = (hash_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
+        let stored_slice = match data.get(hash_body_start..hash_body_start + 16) {
+            Some(s) => s,
+            None => return,
+        };
+        let stored: [u8; 16] = stored_slice.try_into().unwrap();
+
+        if computed != stored {
+            issues.push(EwfIntegrityAnomaly::HashMismatch { computed, stored });
+        }
     }
 
     fn walk_sections(&self, issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<Section> {
@@ -335,7 +377,7 @@ struct Section {
     size: u64,
 }
 
-fn adler32(data: &[u8]) -> u32 {
+pub(crate) fn adler32(data: &[u8]) -> u32 {
     const MOD: u32 = 65521;
     let mut s1: u32 = 1;
     let mut s2: u32 = 0;
