@@ -62,6 +62,11 @@ pub enum EwfIntegrityAnomaly {
         entry_offset: u64,
         file_size: u64,
     },
+    HashMismatch {
+        computed: [u8; 16],
+        stored: [u8; 16],
+    },
+    HashSectionMissing,
 }
 
 impl EwfIntegrityAnomaly {
@@ -80,6 +85,8 @@ impl EwfIntegrityAnomaly {
             Self::BytesPerSectorInvalid { .. } => Severity::Error,
             Self::TableChunkCountMismatch { .. } => Severity::Error,
             Self::TableEntryOutOfBounds { .. } => Severity::Error,
+            Self::HashMismatch { .. } => Severity::Error,
+            Self::HashSectionMissing => Severity::Warning,
         }
     }
 }

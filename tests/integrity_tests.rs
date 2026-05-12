@@ -242,7 +242,45 @@ fn table_entry_out_of_bounds_detected() {
     );
 }
 
-// ── Phase 6: Severity contract ────────────────────────────────────────────────
+// ── Phase 6: Hash Integrity ───────────────────────────────────────────────────
+
+// Test 16: stored MD5 differs from computed MD5 of sectors data → HashMismatch
+#[test]
+fn hash_mismatch_detected() {
+    let bad_hash = [0xBAu8; 16];
+    let image = E01Builder::new(512 * 64).with_md5(bad_hash).build();
+    let findings = EwfIntegrity::new(&image).analyse();
+    assert!(
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::HashMismatch { .. })),
+        "expected HashMismatch, got: {findings:#?}"
+    );
+}
+
+// Test 17: no hash section present → HashSectionMissing (Warning)
+#[test]
+fn hash_section_missing_detected() {
+    let image = E01Builder::new(512 * 64).with_omit_hash().build();
+    let findings = EwfIntegrity::new(&image).analyse();
+    assert!(
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::HashSectionMissing)),
+        "expected HashSectionMissing, got: {findings:#?}"
+    );
+    let anomaly = findings
+        .iter()
+        .find(|a| matches!(a, EwfIntegrityAnomaly::HashSectionMissing))
+        .unwrap();
+    assert_eq!(
+        anomaly.severity(),
+        Severity::Warning,
+        "HashSectionMissing should be Warning severity"
+    );
+}
+
+// ── Phase 7: Severity contract ────────────────────────────────────────────────
 
 // Test 15: severity levels are correct for key anomaly types
 #[test]

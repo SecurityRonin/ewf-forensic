@@ -15,6 +15,7 @@
 ///   [???]    Hash data        16 bytes (MD5)
 ///   [???]    Done desc        76 bytes  (next == self)
 
+use md5::{Digest as _, Md5};
 use std::io::Write as _;
 
 /// EWF v1 signature: "EVF\x09\x0d\x0a\xff\x00"
@@ -89,6 +90,8 @@ pub struct E01Builder {
     pub volume_type_override: Option<String>,
     /// Segment number override (separate from segment_number for testing zero).
     pub segment_number_override: Option<u16>,
+    /// If true, skip the hash section entirely.
+    pub omit_hash: bool,
 }
 
 impl E01Builder {
@@ -111,6 +114,7 @@ impl E01Builder {
             break_chain: false,
             volume_type_override: None,
             segment_number_override: None,
+            omit_hash: false,
         }
     }
 
@@ -166,6 +170,10 @@ impl E01Builder {
         self.md5_override = Some(md5);
         self
     }
+    pub fn with_omit_hash(mut self) -> Self {
+        self.omit_hash = true;
+        self
+    }
 
     pub fn build(self) -> Vec<u8> {
         let spc = self.sectors_per_chunk;
@@ -215,7 +223,9 @@ impl E01Builder {
         }
 
         let hash_desc_off = pos;
-        pos += hash_section_size;
+        if !self.omit_hash {
+            pos += hash_section_size;
+        }
 
         let done_desc_off = pos;
 
@@ -308,13 +318,16 @@ impl E01Builder {
         }
 
         // Sectors section
+        let sectors_next = if self.omit_hash {
+            done_desc_off
+        } else if self.insert_gap {
+            hash_desc_off + 16
+        } else {
+            hash_desc_off
+        };
         buf.extend_from_slice(&make_section_descriptor(
             "sectors",
-            if self.insert_gap {
-                hash_desc_off + 16
-            } else {
-                hash_desc_off
-            },
+            sectors_next,
             sectors_section_size,
         ));
         // Sectors data: all-zero chunks (uncompressed)
@@ -330,22 +343,23 @@ impl E01Builder {
         }
 
         // Hash section
-        let next_after_hash = if self.omit_done {
-            0u64
-        } else if self.break_chain {
-            buf.len() as u64 + 0x0010_0000 // beyond file
-        } else {
-            done_desc_off
-        };
-        buf.extend_from_slice(&make_section_descriptor(
-            "hash",
-            next_after_hash,
-            hash_section_size,
-        ));
-        // Compute MD5 of all sectors data
-        let md5 = compute_md5(&sectors_data);
-        let stored_md5 = self.md5_override.unwrap_or(md5);
-        buf.extend_from_slice(&stored_md5);
+        if !self.omit_hash {
+            let next_after_hash = if self.omit_done {
+                0u64
+            } else if self.break_chain {
+                buf.len() as u64 + 0x0010_0000 // beyond file
+            } else {
+                done_desc_off
+            };
+            buf.extend_from_slice(&make_section_descriptor(
+                "hash",
+                next_after_hash,
+                hash_section_size,
+            ));
+            let md5 = compute_md5(&sectors_data);
+            let stored_md5 = self.md5_override.unwrap_or(md5);
+            buf.extend_from_slice(&stored_md5);
+        }
 
         // Done section
         if !self.omit_done {
@@ -362,20 +376,6 @@ impl E01Builder {
     }
 }
 
-/// Minimal MD5 — delegates to stdlib-compatible impl.
-/// In tests we use this to produce correct hashes; the forensic library
-/// recomputes independently.
 fn compute_md5(data: &[u8]) -> [u8; 16] {
-    // Simple all-zero shortcut for now — tests that check hash content
-    // will call this directly and compare.  The forensic library must
-    // implement its own MD5.
-    //
-    // For the builder we use a seeded, deterministic value derived from
-    // the data length so that "correct" and "wrong" hashes are distinct.
-    let mut out = [0u8; 16];
-    // Extremely simplified: XOR length into first 8 bytes.
-    // Real tests that care about hash integrity will inject md5_override.
-    let len_bytes = (data.len() as u64).to_le_bytes();
-    out[..8].copy_from_slice(&len_bytes);
-    out
+    Md5::digest(data).into()
 }
