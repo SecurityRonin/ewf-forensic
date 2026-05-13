@@ -265,8 +265,7 @@ impl<'a> EwfIntegrity<'a> {
                 if next_off + 4 > data.len() {
                     return;
                 }
-                let next_raw =
-                    u32::from_le_bytes(data[next_off..next_off + 4].try_into().unwrap());
+                let next_raw = u32::from_le_bytes(data[next_off..next_off + 4].try_into().unwrap());
                 let next_rel = u64::from(next_raw & 0x7FFF_FFFF);
                 match base_offset.checked_add(next_rel) {
                     Some(abs) if (abs as usize) <= data.len() => abs as usize,

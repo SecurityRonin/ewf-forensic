@@ -1,28 +1,17 @@
-// Integration tests against the three small E01 fixtures committed to the ewf
-// repository.  These tests are developer-local: if the fixture directory is
-// absent the tests return early rather than failing so that CI (which does not
-// have the fixtures) is unaffected.
+// Integration tests against the three small E01 fixtures committed to
+// tests/fixtures/.  They run in CI on every push.
 //
 // Run locally with:
 //   cargo test --test real_image_tests
 
 use ewf_forensic::{EwfIntegrity, Severity};
 
-const FIXTURES: &str = "/Users/4n6h4x0r/src/ewf/ewf/tests/data";
-
-fn run_if_present(name: &str) -> Option<Vec<ewf_forensic::EwfIntegrityAnomaly>> {
-    let path = format!("{FIXTURES}/{name}");
-    if !std::path::Path::new(&path).exists() {
-        return None;
-    }
-    let data = std::fs::read(&path).expect("read fixture");
-    Some(EwfIntegrity::new(&data).analyse())
-}
+const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
 
 fn assert_no_errors(name: &str) {
-    let Some(findings) = run_if_present(name) else {
-        return;
-    };
+    let path = format!("{FIXTURES}/{name}");
+    let data = std::fs::read(&path).expect("read fixture");
+    let findings = EwfIntegrity::new(&data).analyse();
     let errors: Vec<_> = findings
         .iter()
         .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))

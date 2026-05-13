@@ -7,7 +7,7 @@
 [![docs.rs](https://img.shields.io/docsrs/ewf-forensic)](https://docs.rs/ewf-forensic)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml)
-[![Rust 1.82+](https://img.shields.io/badge/rust-1.82%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
 
 **Verify the image. Trust the evidence.**
@@ -177,11 +177,11 @@ std::fs::write("evidence_repaired.E01", &report.data).unwrap();
 - **Zero allocation on clean images** — the analyser returns an empty `Vec` and touches no heap beyond the slice you hand it.
 - **No unsafe code** — `ewf_forensic` itself contains no `unsafe` blocks.
 - **No panics on adversarial input** — every parser path is bounded; cycle attacks and integer overflows are explicitly handled. Verified by libfuzzer (4.5 M iterations, zero crashes).
-- **Validated against real acquisitions** — zero false positives across three public E01 fixtures with full MD5 hash verification (including per-chunk zlib decompression):
-  - [`exfat1.E01`](https://digitalcorpora.s3.amazonaws.com/corpora/drives/dftt-2004/exfat1.E01) — Digital Corpora DFTT exFAT image (EnCase/ADI)
-  - [`nps-2010-emails.E01`](https://digitalcorpora.s3.amazonaws.com/corpora/drives/nps-2010-emails/nps-2010-emails.E01) — NPS 2010 email corpus (EnCase 6, best compression)
-  - [`imageformat_mmls_1.E01`](https://digitalcorpora.s3.amazonaws.com/corpora/drives/dftt-2004/imageformat_mmls_1.E01) — Digital Corpora DFTT MMLS test image (FTK Imager)
-- **MSRV 1.82** — no nightly, no unstable features.
+- **Validated against real acquisitions** — zero false positives across three public E01 fixtures with full MD5 hash verification (including per-chunk zlib decompression). Images are committed as test fixtures and run in CI. See [`docs/VALIDATION.md`](docs/VALIDATION.md) for details and download URLs:
+  - [`exfat1.E01`](https://digitalcorpora.s3.amazonaws.com/corpora/drives/dftt-2004/exfat1.E01) — Digital Corpora DFTT exFAT image (EnCase 6, 3,053 compressed chunks)
+  - [`nps-2010-emails.E01`](https://digitalcorpora.s3.amazonaws.com/corpora/drives/nps-2010-emails/nps-2010-emails.E01) — NPS 2010 email corpus (EnCase 6, 320 compressed chunks)
+  - [`imageformat_mmls_1.E01`](https://digitalcorpora.s3.amazonaws.com/corpora/drives/dftt-2004/imageformat_mmls_1.E01) — Digital Corpora DFTT MMLS test image (FTK Imager, 1,921 compressed chunks)
+- **MSRV 1.85** — no nightly, no unstable features.
 
 ---
 
@@ -208,4 +208,4 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-[Sponsor this project](https://github.com/sponsors/h4x0r) · © 2026 Security Ronin Ltd
+[Privacy Policy](https://securityronin.github.io/ewf-forensic/privacy/) · [Terms of Service](https://securityronin.github.io/ewf-forensic/terms/) · © 2026 Security Ronin Ltd
