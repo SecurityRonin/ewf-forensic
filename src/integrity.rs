@@ -22,6 +22,7 @@ const LEF2_SIGNATURE: [u8; 8] = [0x4c, 0x45, 0x46, 0x32, 0x0d, 0x0a, 0x81, 0x00]
 const EVF2_FILE_HEADER_SIZE: usize = 32;
 const EVF2_SECTION_DESCRIPTOR_SIZE: usize = 64;
 const EVF2_DATA_FLAG_ENCRYPTED: u32 = 0x0000_0002;
+const EVF2_TYPE_MEDIA_INFO: u32 = 0x02;
 const EVF2_TYPE_MD5_HASH: u32 = 0x08;
 const EVF2_TYPE_SHA1_HASH: u32 = 0x09;
 const EVF2_TYPE_DONE: u32 = 0x0F;
@@ -134,6 +135,14 @@ pub enum EwfIntegrityAnomaly {
     },
     /// No MD5 or SHA-1 hash section found in the final EWF v2 segment.
     Ewf2HashSectionMissing,
+    /// No media information (device information) section found in the EWF v2 image.
+    Ewf2MediaInfoMissing,
+    /// bytes_per_sector in the EWF v2 media info section is not 512 or 4096.
+    Ewf2BytesPerSectorInvalid { bytes_per_sector: u32 },
+    /// sectors_per_chunk in the EWF v2 media info section is zero or not a power of two.
+    Ewf2ChunkSizeInvalid { sectors_per_chunk: u32 },
+    /// sector_count in the EWF v2 media info section is zero.
+    Ewf2SectorCountZero,
 }
 
 impl EwfIntegrityAnomaly {
@@ -163,6 +172,10 @@ impl EwfIntegrityAnomaly {
             Self::Ewf2SectionDataHashMismatch { .. } => Severity::Error,
             Self::Ewf2EncryptedSection { .. } => Severity::Warning,
             Self::Ewf2HashSectionMissing => Severity::Warning,
+            Self::Ewf2MediaInfoMissing => Severity::Warning,
+            Self::Ewf2BytesPerSectorInvalid { .. } => Severity::Error,
+            Self::Ewf2ChunkSizeInvalid { .. } => Severity::Error,
+            Self::Ewf2SectorCountZero => Severity::Error,
         }
     }
 }
@@ -345,6 +358,7 @@ impl<'a> EwfIntegrity<'a> {
 
             let mut pos = EVF2_FILE_HEADER_SIZE;
             let mut has_hash = false;
+            let mut has_media_info = false;
 
             loop {
                 if pos + EVF2_SECTION_DESCRIPTOR_SIZE > data.len() {
@@ -361,22 +375,27 @@ impl<'a> EwfIntegrity<'a> {
                 let body_end = body_start.saturating_add(data_size);
 
                 if data_flags & EVF2_DATA_FLAG_ENCRYPTED != 0 {
-                    // Cannot verify encrypted content — report and skip hash check
                     issues.push(EwfIntegrityAnomaly::Ewf2EncryptedSection {
                         offset: pos as u64,
                     });
-                } else if stored_hash != [0u8; 16] {
-                    // Verify section body integrity against stored MD5
-                    if let Some(body) = data.get(body_start..body_end) {
-                        let computed: [u8; 16] = Md5::digest(body).into();
-                        if computed != stored_hash {
-                            issues.push(EwfIntegrityAnomaly::Ewf2SectionDataHashMismatch {
-                                offset: pos as u64,
-                                section_type_id: section_type,
-                                computed,
-                                stored: stored_hash,
-                            });
+                } else {
+                    if stored_hash != [0u8; 16] {
+                        if let Some(body) = data.get(body_start..body_end) {
+                            let computed: [u8; 16] = Md5::digest(body).into();
+                            if computed != stored_hash {
+                                issues.push(EwfIntegrityAnomaly::Ewf2SectionDataHashMismatch {
+                                    offset: pos as u64,
+                                    section_type_id: section_type,
+                                    computed,
+                                    stored: stored_hash,
+                                });
+                            }
                         }
+                    }
+
+                    if section_type == EVF2_TYPE_MEDIA_INFO {
+                        has_media_info = true;
+                        check_ewf2_media_info(data, body_start, body_end, &mut issues);
                     }
                 }
 
@@ -402,6 +421,9 @@ impl<'a> EwfIntegrity<'a> {
             if idx == n - 1 && !has_hash {
                 issues.push(EwfIntegrityAnomaly::Ewf2HashSectionMissing);
             }
+            if idx == 0 && !has_media_info {
+                issues.push(EwfIntegrityAnomaly::Ewf2MediaInfoMissing);
+            }
         }
 
         issues
@@ -409,6 +431,37 @@ impl<'a> EwfIntegrity<'a> {
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Parse and validate the EWF v2 media information section body.
+/// Body layout (20 bytes):
+///   [0..4]   bytes_per_sector (u32 LE)
+///   [4..8]   sectors_per_chunk (u32 LE)
+///   [8..16]  sector_count (u64 LE)
+///   [16..20] reserved
+fn check_ewf2_media_info(
+    data: &[u8],
+    body_start: usize,
+    body_end: usize,
+    issues: &mut Vec<EwfIntegrityAnomaly>,
+) {
+    let body = match data.get(body_start..body_end) {
+        Some(b) if b.len() >= 16 => b,
+        _ => return,
+    };
+    let bps = u32::from_le_bytes(body[0..4].try_into().unwrap());
+    let spc = u32::from_le_bytes(body[4..8].try_into().unwrap());
+    let sector_count = u64::from_le_bytes(body[8..16].try_into().unwrap());
+
+    if bps != 512 && bps != 4096 {
+        issues.push(EwfIntegrityAnomaly::Ewf2BytesPerSectorInvalid { bytes_per_sector: bps });
+    }
+    if spc == 0 || spc & (spc - 1) != 0 {
+        issues.push(EwfIntegrityAnomaly::Ewf2ChunkSizeInvalid { sectors_per_chunk: spc });
+    }
+    if sector_count == 0 {
+        issues.push(EwfIntegrityAnomaly::Ewf2SectorCountZero);
+    }
+}
 
 struct Section {
     type_name: String,

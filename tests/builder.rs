@@ -155,6 +155,78 @@ pub fn make_ewf2_no_hash_segment() -> Vec<u8> {
     buf
 }
 
+/// EWF v2 section type for media/device information (volume geometry).
+/// Layout of the 20-byte body:
+///   [0..4]   bytes_per_sector (u32 LE)
+///   [4..8]   sectors_per_chunk (u32 LE)
+///   [8..16]  sector_count (u64 LE)
+///   [16..20] reserved (zeros)
+pub const EVF2_SECTION_TYPE_MEDIA_INFO: u32 = 0x02;
+
+fn make_ewf2_media_info_body(bytes_per_sector: u32, sectors_per_chunk: u32, sector_count: u64) -> Vec<u8> {
+    let mut b = vec![0u8; 20];
+    b[0..4].copy_from_slice(&bytes_per_sector.to_le_bytes());
+    b[4..8].copy_from_slice(&sectors_per_chunk.to_le_bytes());
+    b[8..16].copy_from_slice(&sector_count.to_le_bytes());
+    b
+}
+
+/// EWF v2 segment with a valid media information section.
+pub fn make_ewf2_clean_segment_with_media_info(
+    bytes_per_sector: u32,
+    sectors_per_chunk: u32,
+    sector_count: u64,
+) -> Vec<u8> {
+    use md5::{Digest as _, Md5};
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&make_ewf2_file_header(1));
+
+    // Media info section
+    let body = make_ewf2_media_info_body(bytes_per_sector, sectors_per_chunk, sector_count);
+    let hash: [u8; 16] = Md5::digest(&body).into();
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_MEDIA_INFO,
+        0,
+        body.len() as u64,
+        hash,
+    ));
+    buf.extend_from_slice(&body);
+
+    // MD5 hash section
+    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_MD5_HASH, 0, 16, [0u8; 16]));
+    buf.extend_from_slice(&[0u8; 16]);
+
+    // Done section
+    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_DONE, 0, 0, [0u8; 16]));
+    buf
+}
+
+/// EWF v2 segment with a media information section containing bad geometry values.
+pub fn make_ewf2_segment_bad_geometry(
+    bytes_per_sector: u32,
+    sectors_per_chunk: u32,
+    sector_count: u64,
+) -> Vec<u8> {
+    use md5::{Digest as _, Md5};
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&make_ewf2_file_header(1));
+
+    let body = make_ewf2_media_info_body(bytes_per_sector, sectors_per_chunk, sector_count);
+    let hash: [u8; 16] = Md5::digest(&body).into();
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_MEDIA_INFO,
+        0,
+        body.len() as u64,
+        hash,
+    ));
+    buf.extend_from_slice(&body);
+
+    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_MD5_HASH, 0, 16, [0u8; 16]));
+    buf.extend_from_slice(&[0u8; 16]);
+    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_DONE, 0, 0, [0u8; 16]));
+    buf
+}
+
 // ── EWF v1 segment builder ───────────────────────────────────────────────────
 
 pub struct E01Builder {
