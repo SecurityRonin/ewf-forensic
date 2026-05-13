@@ -250,6 +250,58 @@ fn hash_section_missing_detected() {
     );
 }
 
+// ── Phase 6 continued: Table range and zero-gap detection ────────────────────
+
+// Test 18: table entry inside file but outside sectors body → TableEntryOutsideSectorsRange
+#[test]
+fn table_entry_outside_sectors_range_detected() {
+    // base_offset = 0 → entry 0 resolves to absolute offset 0 (file header),
+    // which is inside the file but outside the sectors data body.
+    let image = E01Builder::new(512 * 64).with_table_base_offset(0).build();
+    let findings = EwfIntegrity::new(&image).analyse();
+    assert!(
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::TableEntryOutsideSectorsRange { .. })),
+        "expected TableEntryOutsideSectorsRange, got: {findings:#?}"
+    );
+    // Entry is inside the file, so OutOfBounds must NOT also fire.
+    assert!(
+        !findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::TableEntryOutOfBounds { .. })),
+        "TableEntryOutOfBounds must not fire when entry is inside file: {findings:#?}"
+    );
+}
+
+// Test 19: zero-filled inter-section gap → SectionGapZero (Info), not SectionGapNonZero
+#[test]
+fn zero_byte_gap_detected() {
+    let image = E01Builder::new(512 * 64).with_zero_gap().build();
+    let findings = EwfIntegrity::new(&image).analyse();
+    assert!(
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::SectionGapZero { .. })),
+        "expected SectionGapZero, got: {findings:#?}"
+    );
+    assert!(
+        !findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::SectionGapNonZero { .. })),
+        "SectionGapNonZero must not fire for a zero-filled gap: {findings:#?}"
+    );
+    let anomaly = findings
+        .iter()
+        .find(|a| matches!(a, EwfIntegrityAnomaly::SectionGapZero { .. }))
+        .unwrap();
+    assert_eq!(
+        anomaly.severity(),
+        Severity::Info,
+        "SectionGapZero must carry Info severity"
+    );
+}
+
 // ── Phase 7: Severity contract ────────────────────────────────────────────────
 
 // Test 15: severity levels are correct for key anomaly types
@@ -325,6 +377,22 @@ fn severity_levels_correct() {
                 file_size: 0,
             },
             Error,
+        ),
+        (
+            EwfIntegrityAnomaly::TableEntryOutsideSectorsRange {
+                chunk_index: 0,
+                entry_offset: 0,
+                sectors_start: 0,
+                sectors_end: 0,
+            },
+            Error,
+        ),
+        (
+            EwfIntegrityAnomaly::SectionGapZero {
+                gap_offset: 0,
+                gap_size: 16,
+            },
+            Info,
         ),
     ];
     for (anomaly, expected) in cases {

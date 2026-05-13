@@ -91,6 +91,11 @@ pub struct E01Builder {
     pub segment_number_override: Option<u16>,
     /// If true, skip the hash section entirely.
     pub omit_hash: bool,
+    /// Override the table header's base_offset field (absolute offset of sectors data body).
+    /// Setting this to 0 places all chunk entries outside the sectors section.
+    pub table_base_offset_override: Option<u64>,
+    /// If true, insert a 16-byte all-zero gap between the sectors and hash sections.
+    pub insert_zero_gap: bool,
 }
 
 impl E01Builder {
@@ -114,6 +119,8 @@ impl E01Builder {
             volume_type_override: None,
             segment_number_override: None,
             omit_hash: false,
+            table_base_offset_override: None,
+            insert_zero_gap: false,
         }
     }
 
@@ -173,6 +180,14 @@ impl E01Builder {
         self.omit_hash = true;
         self
     }
+    pub fn with_table_base_offset(mut self, offset: u64) -> Self {
+        self.table_base_offset_override = Some(offset);
+        self
+    }
+    pub fn with_zero_gap(mut self) -> Self {
+        self.insert_zero_gap = true;
+        self
+    }
 
     pub fn build(self) -> Vec<u8> {
         let spc = self.sectors_per_chunk;
@@ -216,6 +231,9 @@ impl E01Builder {
         let sectors_desc_off = pos;
         pos += sectors_section_size;
         if self.insert_gap {
+            pos += 16;
+        }
+        if self.insert_zero_gap {
             pos += 16;
         }
 
@@ -290,7 +308,10 @@ impl E01Builder {
                                                                          // padding [4..8] = 0
                                                                          // base_offset [8..16] — absolute offset where chunk data starts (sectors data body)
         let sectors_data_start = sectors_desc_off + SECTION_DESCRIPTOR_SIZE as u64;
-        tbl_hdr[8..16].copy_from_slice(&sectors_data_start.to_le_bytes());
+        let tbl_base = self
+            .table_base_offset_override
+            .unwrap_or(sectors_data_start);
+        tbl_hdr[8..16].copy_from_slice(&tbl_base.to_le_bytes());
         // checksum [16..24]: adler32 of first 16 bytes then the entries
         // (simplified: store 0 for testing; forensic checks use stored vs computed)
         let tbl_crc = adler32(&tbl_hdr[..16]);
@@ -325,12 +346,15 @@ impl E01Builder {
         let sectors_data = vec![0u8; sectors_data_size as usize];
         buf.extend_from_slice(&sectors_data);
 
-        // Optional gap (16 non-zero bytes between sections)
+        // Optional gap between sectors and hash sections.
         if self.insert_gap {
             buf.extend_from_slice(&[
                 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0x13, 0x37, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x01,
             ]);
+        }
+        if self.insert_zero_gap {
+            buf.extend_from_slice(&[0u8; 16]);
         }
 
         // Hash section
