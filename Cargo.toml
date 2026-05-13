@@ -13,6 +13,10 @@ categories = ["parser-implementations"]
 [lib]
 name = "ewf_forensic"
 
+[[bin]]
+name = "ewf-check"
+path = "src/bin/ewf_check.rs"
+
 [dependencies]
 flate2 = "1"
 md-5 = "0.10"
