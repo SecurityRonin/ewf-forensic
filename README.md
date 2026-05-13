@@ -66,7 +66,7 @@ ewf-forensic = "0.1"
 |---------|----------|
 | `BytesPerSectorInvalid { bytes_per_sector }` — not 512 or 4 096 | Error |
 | `ChunkSizeInvalid { sectors_per_chunk, bytes_per_sector }` — zero or not a power of two | Error |
-| `SectorCountMismatch { declared, expected }` — `sector_count ≠ chunk_count × sectors_per_chunk` | Error |
+| `SectorCountMismatch { declared, expected }` — `sector_count` is outside the valid range `((chunk_count−1)×spc, chunk_count×spc]`; last-chunk padding is normal and not flagged | Error |
 
 ### Layer 6 — Table Integrity
 
@@ -80,8 +80,9 @@ ewf-forensic = "0.1"
 
 | Anomaly | Severity |
 |---------|----------|
-| `HashMismatch { computed, stored }` — MD5 of sectors body does not match stored hash | Error |
+| `HashMismatch { computed, stored }` — MD5 of sectors body does not match stored hash (uncompressed images only) | Error |
 | `HashSectionMissing` — no `hash` section found | Warning |
+| `HashVerificationSkipped` — one or more table entries have bit 31 set (zlib-compressed chunks); the stored MD5 is over uncompressed data and cannot be verified without decompression | Info |
 
 ---
 
@@ -168,6 +169,7 @@ std::fs::write("evidence_repaired.E01", &report.data).unwrap();
 |---------|:-----------:|--------|
 | `SectionDescriptorCrcMismatch` | Yes | Adler-32 is deterministically recomputed from the bytes already present |
 | `HashMismatch` | No | Cannot determine whether the sector data or the stored hash is authoritative |
+| `HashVerificationSkipped` | N/A | Not a damage finding — hash verification requires decompression |
 | All others | No | Structural damage requires analyst judgement |
 
 ---
@@ -177,6 +179,7 @@ std::fs::write("evidence_repaired.E01", &report.data).unwrap();
 - **Zero allocation on clean images** — the analyser returns an empty `Vec` and touches no heap beyond the slice you hand it.
 - **No unsafe code** — `ewf_forensic` itself contains no `unsafe` blocks.
 - **No panics on adversarial input** — every parser path is bounded; cycle attacks and integer overflows are explicitly handled. Verified by libfuzzer (4.5 M iterations, zero crashes).
+- **Validated against real acquisitions** — zero false positives across three public E01 fixtures (exFAT, email corpus, MMLS test image) produced by EnCase, FTK Imager, and ADI. Images sourced from [Digital Corpora](https://digitalcorpora.org/) and [The Evidence Locker](https://theevidencelocker.github.io/).
 - **MSRV 1.82** — no nightly, no unstable features.
 
 ---
