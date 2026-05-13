@@ -34,8 +34,7 @@ fn assert_no_errors(name: &str) {
 }
 
 // A well-formed E01 from a real acquisition must produce no Error/Critical
-// findings.  Warnings and Info (e.g. HashVerificationSkipped for compressed
-// chunks) are acceptable.
+// findings.  Warnings (e.g. DoneSectionMissing) and Info are acceptable.
 
 #[test]
 fn exfat1_no_error_findings() {

@@ -80,9 +80,8 @@ ewf-forensic = "0.1"
 
 | Anomaly | Severity |
 |---------|----------|
-| `HashMismatch { computed, stored }` — MD5 of sectors body does not match stored hash (uncompressed images only) | Error |
+| `HashMismatch { computed, stored }` — MD5 of decompressed sector data does not match stored hash | Error |
 | `HashSectionMissing` — no `hash` section found | Warning |
-| `HashVerificationSkipped` — one or more table entries have bit 31 set (zlib-compressed chunks); the stored MD5 is over uncompressed data and cannot be verified without decompression | Info |
 
 ---
 
@@ -169,7 +168,6 @@ std::fs::write("evidence_repaired.E01", &report.data).unwrap();
 |---------|:-----------:|--------|
 | `SectionDescriptorCrcMismatch` | Yes | Adler-32 is deterministically recomputed from the bytes already present |
 | `HashMismatch` | No | Cannot determine whether the sector data or the stored hash is authoritative |
-| `HashVerificationSkipped` | N/A | Not a damage finding — hash verification requires decompression |
 | All others | No | Structural damage requires analyst judgement |
 
 ---
@@ -179,7 +177,10 @@ std::fs::write("evidence_repaired.E01", &report.data).unwrap();
 - **Zero allocation on clean images** — the analyser returns an empty `Vec` and touches no heap beyond the slice you hand it.
 - **No unsafe code** — `ewf_forensic` itself contains no `unsafe` blocks.
 - **No panics on adversarial input** — every parser path is bounded; cycle attacks and integer overflows are explicitly handled. Verified by libfuzzer (4.5 M iterations, zero crashes).
-- **Validated against real acquisitions** — zero false positives across three public E01 fixtures (exFAT, email corpus, MMLS test image) produced by EnCase, FTK Imager, and ADI. Images sourced from [Digital Corpora](https://digitalcorpora.org/) and [The Evidence Locker](https://theevidencelocker.github.io/).
+- **Validated against real acquisitions** — zero false positives across three public E01 fixtures with full MD5 hash verification (including per-chunk zlib decompression):
+  - [`exfat1.E01`](https://digitalcorpora.s3.amazonaws.com/corpora/drives/dftt-2004/exfat1.E01) — Digital Corpora DFTT exFAT image (EnCase/ADI)
+  - [`nps-2010-emails.E01`](https://digitalcorpora.s3.amazonaws.com/corpora/drives/nps-2010-emails/nps-2010-emails.E01) — NPS 2010 email corpus (EnCase 6, best compression)
+  - [`imageformat_mmls_1.E01`](https://digitalcorpora.s3.amazonaws.com/corpora/drives/dftt-2004/imageformat_mmls_1.E01) — Digital Corpora DFTT MMLS test image (FTK Imager)
 - **MSRV 1.82** — no nightly, no unstable features.
 
 ---

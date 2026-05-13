@@ -1,4 +1,6 @@
+use flate2::read::ZlibDecoder;
 use md5::{Digest as _, Md5};
+use std::io::Read as _;
 
 const EVF_SIGNATURE: [u8; 8] = [0x45, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
 const FILE_HEADER_SIZE: usize = 13;
@@ -155,7 +157,7 @@ impl<'a> EwfIntegrity<'a> {
         let volume = sections
             .iter()
             .find(|s| s.type_name == "volume" || s.type_name == "disk");
-        let chunk_count_from_volume: Option<u32> = match volume {
+        let geometry: Option<VolumeGeometry> = match volume {
             None => {
                 issues.push(EwfIntegrityAnomaly::VolumeSectionMissing);
                 None
@@ -172,7 +174,7 @@ impl<'a> EwfIntegrity<'a> {
         if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
             self.check_table(
                 table.offset,
-                chunk_count_from_volume,
+                geometry.as_ref().map(|g| g.chunk_count),
                 file_size,
                 sectors_range,
                 &mut issues,
@@ -185,12 +187,17 @@ impl<'a> EwfIntegrity<'a> {
         }
 
         // ── Layer 7: Hash verification ────────────────────────────────────────
-        self.check_hash(&sections, &mut issues);
+        self.check_hash(&sections, geometry.as_ref(), &mut issues);
 
         issues
     }
 
-    fn check_hash(&self, sections: &[Section], issues: &mut Vec<EwfIntegrityAnomaly>) {
+    fn check_hash(
+        &self,
+        sections: &[Section],
+        geometry: Option<&VolumeGeometry>,
+        issues: &mut Vec<EwfIntegrityAnomaly>,
+    ) {
         let data = self.data;
 
         let hash_sec = match sections.iter().find(|s| s.type_name == "hash") {
@@ -206,15 +213,97 @@ impl<'a> EwfIntegrity<'a> {
             None => return,
         };
 
-        // Hash the raw sectors body (correct only for uncompressed images).
-        let body_start = (sectors_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
-        let body_len = (sectors_sec.size as usize).saturating_sub(SECTION_DESCRIPTOR_SIZE);
-        let sectors_body = match data.get(body_start..body_start + body_len) {
-            Some(b) => b,
+        let table_sec = match sections.iter().find(|s| s.type_name == "table") {
+            Some(s) => s,
             None => return,
         };
 
-        let computed: [u8; 16] = Md5::digest(sectors_body).into();
+        let geom = match geometry {
+            Some(g) if g.sectors_per_chunk > 0 && g.bytes_per_sector > 0 => g,
+            _ => return,
+        };
+
+        // Parse table header for entry_count and base_offset.
+        let tbl_data_start = (table_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
+        if data.len() < tbl_data_start + 24 {
+            return;
+        }
+        let tbl = &data[tbl_data_start..];
+        let entry_count = u32::from_le_bytes(tbl[0..4].try_into().unwrap());
+        let base_offset = u64::from_le_bytes(tbl[8..16].try_into().unwrap());
+        let entries_start = tbl_data_start + 24;
+
+        // Sectors body end boundary used for the last chunk's compressed data.
+        let sectors_body_end = (sectors_sec.offset + sectors_sec.size) as usize;
+
+        let chunk_size = u64::from(geom.sectors_per_chunk) * u64::from(geom.bytes_per_sector);
+        let total_media_bytes = geom.sector_count * u64::from(geom.bytes_per_sector);
+        let mut bytes_remaining = total_media_bytes;
+
+        let mut hasher = Md5::new();
+
+        for i in 0..entry_count {
+            if bytes_remaining == 0 {
+                break;
+            }
+
+            let entry_off = entries_start + (i as usize) * 4;
+            if entry_off + 4 > data.len() {
+                return;
+            }
+            let raw = u32::from_le_bytes(data[entry_off..entry_off + 4].try_into().unwrap());
+            let is_compressed = raw & 0x8000_0000 != 0;
+            let chunk_rel = u64::from(raw & 0x7FFF_FFFF);
+            let chunk_abs_start = match base_offset.checked_add(chunk_rel) {
+                Some(abs) if (abs as usize) <= data.len() => abs as usize,
+                _ => return,
+            };
+
+            // End of this chunk's on-disk data = start of next chunk (or sectors body end).
+            let chunk_abs_end = if i + 1 < entry_count {
+                let next_off = entries_start + (i as usize + 1) * 4;
+                if next_off + 4 > data.len() {
+                    return;
+                }
+                let next_raw =
+                    u32::from_le_bytes(data[next_off..next_off + 4].try_into().unwrap());
+                let next_rel = u64::from(next_raw & 0x7FFF_FFFF);
+                match base_offset.checked_add(next_rel) {
+                    Some(abs) if (abs as usize) <= data.len() => abs as usize,
+                    _ => return,
+                }
+            } else {
+                sectors_body_end.min(data.len())
+            };
+
+            if chunk_abs_start >= chunk_abs_end {
+                return;
+            }
+
+            let chunk_data = &data[chunk_abs_start..chunk_abs_end];
+            // Bytes to feed to the hasher from this chunk (last chunk may be partial).
+            let to_hash = bytes_remaining.min(chunk_size) as usize;
+
+            if is_compressed {
+                // Deflate bomb guard: never decompress more than to_hash + 1 bytes.
+                let limit = (to_hash as u64).saturating_add(1);
+                let mut decompressed = Vec::with_capacity(to_hash);
+                if ZlibDecoder::new(chunk_data)
+                    .take(limit)
+                    .read_to_end(&mut decompressed)
+                    .is_err()
+                {
+                    return;
+                }
+                hasher.update(&decompressed[..decompressed.len().min(to_hash)]);
+            } else {
+                hasher.update(&chunk_data[..chunk_data.len().min(to_hash)]);
+            }
+
+            bytes_remaining = bytes_remaining.saturating_sub(to_hash as u64);
+        }
+
+        let computed: [u8; 16] = hasher.finalize().into();
 
         let hash_body_start = (hash_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
         let stored_slice = match data.get(hash_body_start..hash_body_start + 16) {
@@ -320,7 +409,11 @@ impl<'a> EwfIntegrity<'a> {
         sections
     }
 
-    fn check_volume(&self, desc_offset: u64, issues: &mut Vec<EwfIntegrityAnomaly>) -> Option<u32> {
+    fn check_volume(
+        &self,
+        desc_offset: u64,
+        issues: &mut Vec<EwfIntegrityAnomaly>,
+    ) -> Option<VolumeGeometry> {
         let data_start = (desc_offset as usize) + SECTION_DESCRIPTOR_SIZE;
         let data = self.data;
         if data.len() < data_start + VOLUME_DATA_MIN {
@@ -359,7 +452,12 @@ impl<'a> EwfIntegrity<'a> {
             });
         }
 
-        Some(chunk_count)
+        Some(VolumeGeometry {
+            chunk_count,
+            sectors_per_chunk,
+            bytes_per_sector,
+            sector_count,
+        })
     }
 
     fn check_table(
@@ -423,6 +521,13 @@ struct Section {
     type_name: String,
     offset: u64,
     size: u64,
+}
+
+struct VolumeGeometry {
+    chunk_count: u32,
+    sectors_per_chunk: u32,
+    bytes_per_sector: u32,
+    sector_count: u64,
 }
 
 pub(crate) fn adler32(data: &[u8]) -> u32 {

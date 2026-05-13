@@ -87,7 +87,7 @@ The goal is to alter the content of the imaged drive — adding, changing, or re
 
 ### `HashMismatch` — sector data was changed
 
-**What it means:** The MD5 computed over the raw bytes of the `sectors` section body does not match the 16-byte digest stored in the `hash` section. This is the primary tamper indicator.
+**What it means:** The MD5 computed by decompressing each chunk (zlib where bit 31 is set, raw otherwise) and hashing exactly `sector_count × bytes_per_sector` bytes does not match the 16-byte digest stored in the `hash` section. This is the primary tamper indicator.
 
 **How it's done:**
 
@@ -240,7 +240,7 @@ ewf-forensic is safe against all of the following — verified by libfuzzer acro
 
 **Mechanism:** Craft the zlib-compressed `header` section with extreme compression ratio (e.g., 1 MB compressed → 1 GB output using repeated patterns). Parsers that decompress with `collect::<Vec<u8>>()` — no output size limit — OOM on the decompressed buffer.
 
-**ewf-forensic:** Does not decompress any section data during analysis. Not vulnerable.
+**ewf-forensic:** Decompresses sector chunks during hash verification, but each chunk is read through `ZlibDecoder::take(chunk_size + 1)` — capping output to one chunk's worth of data. A deflate bomb in a chunk body produces at most `sectors_per_chunk × bytes_per_sector + 1` bytes before the decompressor is dropped. Not vulnerable to OOM.
 
 **ewf (fixed):** `flate2::read::ZlibDecoder::take(10 MB)` limits output. Fixed in the security backport from this project.
 
@@ -260,7 +260,7 @@ ewf-forensic is safe against all of the following — verified by libfuzzer acro
 
 **Mechanism:** Craft a table entry whose resolved absolute offset is within the file but points into a section descriptor rather than sector data. Parsers that use table entries to drive decompressor seeks may read structured EWF metadata as compressed chunk data, producing an invalid zlib stream — typically a crash or error cascade.
 
-**ewf-forensic detection:** `TableEntryOutOfBounds` fires for any entry resolving ≥ file_size. Entries that are within the file but outside the sectors section are not currently flagged (the library does not track the sectors section boundary independently of the table base_offset). See [Limitations](#limitations).
+**ewf-forensic detection:** `TableEntryOutOfBounds` fires for any entry resolving ≥ file_size. `TableEntryOutsideSectorsRange` fires for entries that are within the file but outside `[sectors_data_start, sectors_section_end)` — catching redirects into section descriptors, the table itself, or the hash section.
 
 ---
 
@@ -286,9 +286,9 @@ ewf-forensic analyses one segment file at a time. Multi-segment acquisitions (`.
 
 ---
 
-### Sector content is not inspected
+### Sector content is not inspected beyond hash verification
 
-The library hashes the sectors body and compares the result to the stored MD5. It does not decompress, parse, or inspect the content of individual chunks. It cannot identify which specific LBA ranges were modified, detect filesystem-level tampering (e.g., journal manipulation, MFT entry modification), or identify what data was changed. That analysis requires a full EWF reader such as [ewf](https://github.com/SecurityRonin/ewf).
+The library decompresses each chunk and hashes the resulting sector data to verify the stored MD5. It does not parse filesystem structures within those sectors. It cannot identify which specific LBA ranges were modified, detect filesystem-level tampering (e.g., journal manipulation, MFT entry modification), or identify what data was changed. That analysis requires a full EWF reader such as [ewf](https://github.com/SecurityRonin/ewf).
 
 ---
 
