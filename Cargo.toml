@@ -1,6 +1,6 @@
 [package]
 name = "ewf-forensic"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Forensic integrity analysis and repair for EWF (Expert Witness Format / E01) images"
