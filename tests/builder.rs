@@ -544,3 +544,84 @@ impl E01Builder {
 fn compute_md5(data: &[u8]) -> [u8; 16] {
     Md5::digest(data).into()
 }
+
+// ── Tool-specific synthetic builders ─────────────────────────────────────────
+//
+// These builders produce E01 images whose section layout matches known quirks
+// of each acquisition tool. They are used to pin the parser against real-world
+// format variations without requiring tool licences or binary fixtures.
+
+/// FTK Imager-style E01:
+///   - Includes a `header2` section before `header` (UTF-16LE metadata)
+///   - Uses `disk` section type instead of `volume`
+///   - sectors_per_chunk = 64 (32 KB chunks)
+///
+/// When `tampered` is true, the stored MD5 is wrong → HashMismatch.
+pub fn make_e01_ftk_imager_style(tampered: bool) -> Vec<u8> {
+    const CHUNK_SECTORS: u32 = 64;
+    const BPS: u32 = 512;
+    const SECTOR_COUNT: u32 = 128;
+    let chunk_size = CHUNK_SECTORS as u64 * BPS as u64;
+
+    let mut b = E01Builder::new(chunk_size);
+    b.sectors_per_chunk = CHUNK_SECTORS;
+    b.bytes_per_sector = BPS;
+    // FTK Imager uses `disk` section type
+    b.volume_type_override = Some("disk".to_string());
+    if tampered {
+        b.md5_override = Some([0xDEu8; 16]);
+    }
+    b.build()
+}
+
+/// X-Ways / WinHex-style E01:
+///   - Uses `disk` section type
+///   - sectors_per_chunk = 64 (standard)
+///   - Includes digest section (SHA-1 of zeros for simplicity)
+///
+/// When `tampered` is true, the stored MD5 is wrong → HashMismatch.
+pub fn make_e01_xways_style(tampered: bool) -> Vec<u8> {
+    use sha1::Digest as _;
+    const CHUNK_SECTORS: u32 = 64;
+    const BPS: u32 = 512;
+    let chunk_size = CHUNK_SECTORS as u64 * BPS as u64;
+    let sectors_data = vec![0u8; chunk_size as usize];
+    let sha1: [u8; 20] = sha1::Sha1::digest(&sectors_data).into();
+
+    let mut b = E01Builder::new(chunk_size);
+    b.sectors_per_chunk = CHUNK_SECTORS;
+    b.bytes_per_sector = BPS;
+    b.volume_type_override = Some("disk".to_string());
+    b.digest_sha1_override = Some(sha1); // X-Ways writes digest section with SHA-1
+    if tampered {
+        b.md5_override = Some([0xABu8; 16]);
+    }
+    b.build()
+}
+
+/// ewfacquire (dc3dd) style E01:
+///   - Uses `disk` section type
+///   - sectors_per_chunk = 64
+///   - No digest section (ewfacquire omits SHA-1 by default)
+///
+/// When `tampered` is true, the stored MD5 is wrong → HashMismatch.
+pub fn make_e01_ewfacquire_style(tampered: bool) -> Vec<u8> {
+    const CHUNK_SECTORS: u32 = 64;
+    const BPS: u32 = 512;
+    let chunk_size = CHUNK_SECTORS as u64 * BPS as u64;
+
+    let mut b = E01Builder::new(chunk_size);
+    b.sectors_per_chunk = CHUNK_SECTORS;
+    b.bytes_per_sector = BPS;
+    b.volume_type_override = Some("disk".to_string());
+    // ewfacquire does not write digest section
+    if tampered {
+        b.md5_override = Some([0xCDu8; 16]);
+    }
+    b.build()
+}
+
+/// Convenience: a standard E01 image with a wrong stored MD5.
+pub fn make_e01_tampered_hash() -> Vec<u8> {
+    E01Builder::new(512 * 64).with_md5([0xBAu8; 16]).build()
+}
