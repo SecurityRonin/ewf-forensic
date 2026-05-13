@@ -92,6 +92,9 @@ pub enum EwfIntegrityAnomaly {
         stored: [u8; 16],
     },
     HashSectionMissing,
+    /// Chunks are zlib-compressed; verifying the hash requires decompression,
+    /// which is outside this library's scope.  Use a full EWF reader to verify.
+    HashVerificationSkipped,
 }
 
 impl EwfIntegrityAnomaly {
@@ -114,6 +117,7 @@ impl EwfIntegrityAnomaly {
             Self::SectionGapZero { .. } => Severity::Info,
             Self::HashMismatch { .. } => Severity::Error,
             Self::HashSectionMissing => Severity::Warning,
+            Self::HashVerificationSkipped => Severity::Info,
         }
     }
 }
@@ -200,12 +204,22 @@ impl<'a> EwfIntegrity<'a> {
         }
         let hash_sec = hash_sec.unwrap();
 
-        // The sectors section body is everything between the sectors descriptor and
-        // the next section.  Use size field: body = size - SECTION_DESCRIPTOR_SIZE.
         let sectors_sec = match sections.iter().find(|s| s.type_name == "sectors") {
             Some(s) => s,
             None => return,
         };
+
+        // EWF stores the MD5 over *uncompressed* sector data.  If any chunk is
+        // zlib-compressed (table entry bit 31 = 1) we cannot reconstruct the
+        // plaintext without a full EWF reader.  Surface a distinct anomaly so
+        // the analyst knows verification was skipped, rather than emitting a
+        // spurious HashMismatch on every real-world acquisition.
+        if self.any_chunks_compressed(sections) {
+            issues.push(EwfIntegrityAnomaly::HashVerificationSkipped);
+            return;
+        }
+
+        // For uncompressed images the sectors body IS the raw sector data.
         let body_start = (sectors_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
         let body_len = (sectors_sec.size as usize).saturating_sub(SECTION_DESCRIPTOR_SIZE);
         let sectors_body = match data.get(body_start..body_start + body_len) {
@@ -225,6 +239,36 @@ impl<'a> EwfIntegrity<'a> {
         if computed != stored {
             issues.push(EwfIntegrityAnomaly::HashMismatch { computed, stored });
         }
+    }
+
+    fn any_chunks_compressed(&self, sections: &[Section]) -> bool {
+        let data = self.data;
+        // Try both "table" and "table2" (backup); either suffices.
+        for type_name in &["table", "table2"] {
+            let Some(tbl) = sections.iter().find(|s| s.type_name == *type_name) else {
+                continue;
+            };
+            let data_start = (tbl.offset as usize) + SECTION_DESCRIPTOR_SIZE;
+            if data.len() < data_start + 4 {
+                continue;
+            }
+            let entry_count =
+                u32::from_le_bytes(data[data_start..data_start + 4].try_into().unwrap()) as usize;
+            let max_possible = data.len().saturating_sub(data_start + 24) / 4;
+            let entries_start = data_start + 24;
+            for i in 0..entry_count.min(max_possible) {
+                let off = entries_start + i * 4;
+                if off + 4 > data.len() {
+                    break;
+                }
+                let raw = u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+                if raw & 0x8000_0000 != 0 {
+                    return true;
+                }
+            }
+            return false; // found a table, no compressed chunks
+        }
+        false
     }
 
     fn walk_sections(&self, issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<Section> {
@@ -343,11 +387,18 @@ impl<'a> EwfIntegrity<'a> {
             });
         }
 
-        let expected_sectors = u64::from(chunk_count) * u64::from(sectors_per_chunk);
-        if sector_count != expected_sectors && sectors_per_chunk.is_power_of_two() {
+        // Valid range: last chunk may be partially filled.
+        // sector_count must satisfy: (chunk_count-1)*spc < sector_count <= chunk_count*spc.
+        // Only flag the impossible cases: too many sectors, or so few that a whole chunk
+        // is entirely unused (which would imply chunk_count was inflated).
+        let max_sectors = u64::from(chunk_count) * u64::from(sectors_per_chunk);
+        let min_sectors = max_sectors.saturating_sub(u64::from(sectors_per_chunk));
+        let out_of_range =
+            sector_count > max_sectors || (chunk_count > 0 && sector_count <= min_sectors);
+        if out_of_range && sectors_per_chunk.is_power_of_two() {
             issues.push(EwfIntegrityAnomaly::SectorCountMismatch {
                 declared: sector_count,
-                expected: expected_sectors,
+                expected: max_sectors,
             });
         }
 
