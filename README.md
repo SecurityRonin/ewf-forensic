@@ -12,11 +12,9 @@
 
 **Verify the image. Trust the evidence.**
 
-`ewf-forensic` is a pure-Rust library for forensic-grade read and write access to EWF v1 (E01) images — no `libewf`, no C toolchain, no build complexity. Drop it into any Rust project and get direct byte-level access to EWF segment data alongside a full integrity analyser and in-memory repair engine.
+`ewf-forensic` is a pure-Rust integrity analyser and in-memory repair engine for EWF images — no `libewf`, no C toolchain, no build complexity. It supports EWF v1 (E01/E02/E03 multi-segment), EWF v2 (Ex01/Lx01), SHA-1 from digest sections, and chain-of-custody external hash comparison.
 
-The analyser reports exactly what is structurally wrong across seven layers: signature forgery, broken section chains, cyclic chain attacks, Adler-32 descriptor corruption, volume geometry inconsistencies, table mismatches, out-of-bounds chunk pointers, and MD5 hash mismatches. Section descriptor CRC errors are repairable in-memory — patched bytes written to a fresh buffer, original untouched. Hash mismatches are surfaced as `CannotRepair` so you decide what to do next.
-
-\* `md-5` is the only runtime dependency.
+The analyser reports exactly what is structurally wrong across eight layers: signature forgery, broken section chains, cyclic chain attacks, Adler-32 descriptor corruption, volume geometry inconsistencies, table mismatches, out-of-bounds chunk pointers, MD5/SHA-1 hash mismatches, and EWF v2 per-section data integrity checks. Section descriptor CRC errors are repairable in-memory — patched bytes written to a fresh buffer, original untouched. Hash mismatches are surfaced as `CannotRepair` so you decide what to do next.
 
 ---
 
@@ -82,6 +80,23 @@ ewf-forensic = "0.1"
 |---------|----------|
 | `HashMismatch { computed, stored }` — MD5 of decompressed sector data does not match stored hash | Error |
 | `HashSectionMissing` — no `hash` section found | Warning |
+| `DigestSha1Mismatch { computed, stored }` — computed SHA-1 of all sector data does not match the SHA-1 stored in the `digest` section | Error |
+
+### Layer 8 — Multi-segment and External Reference
+
+| Anomaly | Severity |
+|---------|----------|
+| `SegmentOutOfOrder { segment_number, expected }` — supplied segments are not in sequential order | Error |
+| `ExternalMd5Mismatch { computed, expected }` — computed MD5 does not match an externally-supplied chain-of-custody hash | **Critical** |
+| `ExternalSha1Mismatch { computed, expected }` — computed SHA-1 does not match an externally-supplied reference | **Critical** |
+
+### EWF v2 — Per-section Integrity
+
+| Anomaly | Severity |
+|---------|----------|
+| `Ewf2SectionDataHashMismatch { offset, section_type_id, computed, stored }` — MD5 of section body does not match `data_integrity_hash` in the descriptor | Error |
+| `Ewf2EncryptedSection { offset }` — encrypted section found; content cannot be verified | Warning |
+| `Ewf2HashSectionMissing` — no hash section (type 0x08 or 0x09) found in the final segment | Warning |
 
 ---
 
@@ -131,9 +146,35 @@ if !critical.is_empty() {
 }
 ```
 
+### Analyse a multi-segment image (E01, E02, E03 …)
+
+```rust
+use ewf_forensic::EwfIntegrity;
+
+let seg1 = std::fs::read("evidence.E01").unwrap();
+let seg2 = std::fs::read("evidence.E02").unwrap();
+let seg3 = std::fs::read("evidence.E03").unwrap();
+
+let findings = EwfIntegrity::from_segments(&[&seg1, &seg2, &seg3]).analyse();
+```
+
+### Verify against a chain-of-custody hash
+
+```rust
+use ewf_forensic::EwfIntegrity;
+
+let data = std::fs::read("evidence.E01").unwrap();
+let coc_md5: [u8; 16] = [/* hash from acquisition report */];
+
+let findings = EwfIntegrity::new(&data)
+    .with_expected_md5(coc_md5)
+    .analyse();
+// ExternalMd5Mismatch (Critical) fires if the image has been altered.
+```
+
 ### Repair in-memory (non-destructive)
 
-`EwfRepair` never touches your original file. It clones the bytes, applies only safe mechanical fixes (Adler-32 recomputation), and returns the patched buffer alongside a full audit trail of what was repaired and what could not be.
+`EwfRepair` never touches your original file. It applies only safe mechanical fixes (Adler-32 recomputation) and returns a patched buffer per segment alongside a full audit trail of what was repaired and what could not be.
 
 ```rust
 use ewf_forensic::{EwfIntegrity, EwfRepair};
@@ -152,14 +193,14 @@ for c in &report.cannot_repair {
 }
 
 // Verify the patched image is now clean
-let post = EwfIntegrity::new(&report.data).analyse();
+let post = EwfIntegrity::new(&report.segments[0]).analyse();
 assert!(post.iter().all(|a| !matches!(
     a,
     ewf_forensic::EwfIntegrityAnomaly::SectionDescriptorCrcMismatch { .. }
 )));
 
 // Write the repaired copy — original is untouched
-std::fs::write("evidence_repaired.E01", &report.data).unwrap();
+std::fs::write("evidence_repaired.E01", &report.segments[0]).unwrap();
 ```
 
 ### What is and is not repairable

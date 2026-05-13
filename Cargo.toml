@@ -1,6 +1,6 @@
 [package]
 name = "ewf-forensic"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Forensic integrity analysis and repair for EWF (Expert Witness Format / E01) images"
@@ -16,6 +16,7 @@ name = "ewf_forensic"
 [dependencies]
 flate2 = "1"
 md-5 = "0.10"
+sha1 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"

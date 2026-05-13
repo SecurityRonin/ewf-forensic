@@ -32,7 +32,7 @@ fn repair_crc_mismatch_is_repaired() {
         "expected at least one repair action"
     );
     // After repair, running integrity should find no CRC errors
-    let post = EwfIntegrity::new(&result.data).analyse();
+    let post = EwfIntegrity::new(&result.segments[0]).analyse();
     assert!(
         !post
             .iter()
