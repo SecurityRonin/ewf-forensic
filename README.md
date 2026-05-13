@@ -12,9 +12,9 @@
 
 **Verify the image. Trust the evidence.**
 
-`ewf-forensic` is a zero-dependency\* Rust library that reads raw EWF v1 (E01) bytes and reports exactly what is wrong — and what can be fixed automatically — without modifying your original evidence.
+`ewf-forensic` is a pure-Rust library for forensic-grade read and write access to EWF v1 (E01) images — no `libewf`, no C toolchain, no build complexity. Drop it into any Rust project and get direct byte-level access to EWF segment data alongside a full integrity analyser and in-memory repair engine.
 
-It detects signature forgery, broken section chains, cyclic chain attacks, Adler-32 descriptor corruption, volume geometry inconsistencies, table mismatches, out-of-bounds chunk pointers, and MD5 hash mismatches across seven distinct analysis layers. Section descriptor CRC errors are repairable in-memory; hash mismatches are surfaced as `CannotRepair` so you decide what to do next.
+The analyser reports exactly what is structurally wrong across seven layers: signature forgery, broken section chains, cyclic chain attacks, Adler-32 descriptor corruption, volume geometry inconsistencies, table mismatches, out-of-bounds chunk pointers, and MD5 hash mismatches. Section descriptor CRC errors are repairable in-memory — patched bytes written to a fresh buffer, original untouched. Hash mismatches are surfaced as `CannotRepair` so you decide what to do next.
 
 \* `md-5` is the only runtime dependency.
 
@@ -196,12 +196,6 @@ Both targets run in CI for 30 seconds on every push. To run longer locally, remo
 ## Anomaly Catalog
 
 [`docs/anomaly-catalog.md`](docs/anomaly-catalog.md) maps every detectable anomaly to its threat scenario — evidence suppression, modification, insertion, redirection, and parser exploitation — and documents known detection limits.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
 
 ---
 
