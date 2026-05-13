@@ -6,9 +6,18 @@ use std::io::Read as _;
 // ── EWF v1 constants ─────────────────────────────────────────────────────────
 
 const EVF_SIGNATURE: [u8; 8] = [0x45, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
+/// DiskSig/Tableau "dvf" signature — a valid EWF v1 variant.
+const DVF_SIGNATURE: [u8; 8] = [0x64, 0x76, 0x66, 0x09, 0x0d, 0x0a, 0xff, 0x00];
+/// Logical Volume Format "LVF" signature — logical evidence images.
+const LVF_SIGNATURE: [u8; 8] = [0x4c, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
+
 const FILE_HEADER_SIZE: usize = 13;
 pub(crate) const SECTION_DESCRIPTOR_SIZE: usize = 76;
 const VOLUME_DATA_MIN: usize = 24;
+/// The standard ewf_data_t body size (per libewf). Adler-32 at byte 1048.
+const VOLUME_DATA_FULL: usize = 1052;
+/// Valid media_type values from the ewf_data_t struct.
+const VALID_MEDIA_TYPES: &[u8] = &[0x00, 0x01, 0x03, 0x0e, 0x10];
 
 const KNOWN_TYPES: &[&str] = &[
     "header", "header2", "volume", "disk", "table", "table2", "sectors", "hash", "digest",
@@ -135,6 +144,15 @@ pub enum EwfIntegrityAnomaly {
     },
     /// No MD5 or SHA-1 hash section found in the final EWF v2 segment.
     Ewf2HashSectionMissing,
+    /// Adler-32 of the 1052-byte ewf_data_t body is wrong.
+    /// Only checked when the volume body is ≥ 1052 bytes (as in real acquisitions).
+    VolumeBodyCrcMismatch { computed: u32, stored: u32 },
+    /// `media_type` byte (offset 0 of ewf_data_t) is not a known valid value.
+    /// Valid: 0x00=removable, 0x01=fixed, 0x03=optical, 0x0e=LVF, 0x10=memory.
+    MediaTypeUnknown { media_type: u8 },
+    /// The set_identifier GUID (bytes 64-79 of ewf_data_t) differs between segments
+    /// of the same acquisition — indicates segments from different acquisitions were mixed.
+    SetIdentifierMismatch { segment: usize },
     /// No media information (device information) section found in the EWF v2 image.
     Ewf2MediaInfoMissing,
     /// bytes_per_sector in the EWF v2 media info section is not 512 or 4096.
@@ -169,6 +187,9 @@ impl EwfIntegrityAnomaly {
             Self::DigestSha1Mismatch { .. } => Severity::Error,
             Self::ExternalMd5Mismatch { .. } => Severity::Critical,
             Self::ExternalSha1Mismatch { .. } => Severity::Critical,
+            Self::VolumeBodyCrcMismatch { .. } => Severity::Error,
+            Self::MediaTypeUnknown { .. } => Severity::Warning,
+            Self::SetIdentifierMismatch { .. } => Severity::Error,
             Self::Ewf2SectionDataHashMismatch { .. } => Severity::Error,
             Self::Ewf2EncryptedSection { .. } => Severity::Warning,
             Self::Ewf2HashSectionMissing => Severity::Warning,
@@ -254,7 +275,10 @@ impl<'a> EwfIntegrity<'a> {
                 continue;
             }
 
-            if data[0..8] != EVF_SIGNATURE {
+            if data[0..8] != EVF_SIGNATURE
+                && data[0..8] != DVF_SIGNATURE
+                && data[0..8] != LVF_SIGNATURE
+            {
                 issues.push(EwfIntegrityAnomaly::InvalidSignature);
             }
 
@@ -270,15 +294,30 @@ impl<'a> EwfIntegrity<'a> {
 
             let sections = walk_sections_v1(data, &mut issues);
 
-            // Volume geometry — only from first segment
-            if idx == 0 {
-                match sections
-                    .iter()
-                    .find(|s| s.type_name == "volume" || s.type_name == "disk")
-                {
-                    None => issues.push(EwfIntegrityAnomaly::VolumeSectionMissing),
-                    Some(v) => geometry = check_volume_v1(data, v.offset, &mut issues),
+            // Volume/disk geometry — required in segment 0; compared in later segments.
+            if let Some(vol_sec) = sections
+                .iter()
+                .find(|s| s.type_name == "volume" || s.type_name == "disk")
+            {
+                if idx == 0 {
+                    geometry = check_volume_v1(data, vol_sec.offset, vol_sec.size, &mut issues);
+                } else {
+                    // Later segments with a volume section: validate its GUID against seg 0.
+                    let later = check_volume_v1(data, vol_sec.offset, vol_sec.size, &mut issues);
+                    if let (Some(ref base), Some(ref later_geom)) = (&geometry, &later) {
+                        let base_guid = base.set_identifier;
+                        let later_guid = later_geom.set_identifier;
+                        let neither_zero =
+                            base_guid != [0u8; 16] && later_guid != [0u8; 16];
+                        if neither_zero && base_guid != later_guid {
+                            issues.push(EwfIntegrityAnomaly::SetIdentifierMismatch {
+                                segment: idx + 1,
+                            });
+                        }
+                    }
                 }
+            } else if idx == 0 {
+                issues.push(EwfIntegrityAnomaly::VolumeSectionMissing);
             }
 
             // Table integrity — only check chunk count mismatch in single-segment mode
@@ -474,6 +513,8 @@ struct VolumeGeometry {
     sectors_per_chunk: u32,
     bytes_per_sector: u32,
     sector_count: u64,
+    /// set_identifier GUID from ewf_data_t[64..80]; all-zero = not present.
+    set_identifier: [u8; 16],
 }
 
 fn walk_sections_v1(data: &[u8], issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<Section> {
@@ -555,13 +596,22 @@ fn walk_sections_v1(data: &[u8], issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<S
 fn check_volume_v1(
     data: &[u8],
     desc_offset: u64,
+    section_size: u64,
     issues: &mut Vec<EwfIntegrityAnomaly>,
 ) -> Option<VolumeGeometry> {
     let data_start = (desc_offset as usize) + SECTION_DESCRIPTOR_SIZE;
     if data.len() < data_start + VOLUME_DATA_MIN {
         return None;
     }
-    let vol = &data[data_start..];
+    let body_len = (section_size as usize).saturating_sub(SECTION_DESCRIPTOR_SIZE);
+    let vol_end = (data_start + body_len).min(data.len());
+    let vol = &data[data_start..vol_end];
+
+    // media_type: byte 0 of ewf_data_t (valid: 0x00/0x01/0x03/0x0e/0x10)
+    let media_type = vol[0];
+    if !VALID_MEDIA_TYPES.contains(&media_type) {
+        issues.push(EwfIntegrityAnomaly::MediaTypeUnknown { media_type });
+    }
 
     let chunk_count = u32::from_le_bytes(vol[4..8].try_into().unwrap());
     let sectors_per_chunk = u32::from_le_bytes(vol[8..12].try_into().unwrap());
@@ -591,11 +641,32 @@ fn check_volume_v1(
         }
     }
 
+    // set_identifier GUID at ewf_data_t[64..80]
+    let set_identifier: [u8; 16] = if vol.len() >= 80 {
+        vol[64..80].try_into().unwrap()
+    } else {
+        [0u8; 16]
+    };
+
+    // Adler-32 of ewf_data_t bytes 0..1048 stored at bytes 1048..1052.
+    // Only present when the section body is ≥ VOLUME_DATA_FULL (1052) bytes.
+    if vol.len() >= VOLUME_DATA_FULL {
+        let stored_crc = u32::from_le_bytes(vol[1048..1052].try_into().unwrap());
+        let computed_crc = adler32(&vol[..1048]);
+        if computed_crc != stored_crc {
+            issues.push(EwfIntegrityAnomaly::VolumeBodyCrcMismatch {
+                computed: computed_crc,
+                stored: stored_crc,
+            });
+        }
+    }
+
     Some(VolumeGeometry {
         chunk_count,
         sectors_per_chunk,
         bytes_per_sector,
         sector_count,
+        set_identifier,
     })
 }
 

@@ -625,3 +625,317 @@ pub fn make_e01_ewfacquire_style(tampered: bool) -> Vec<u8> {
 pub fn make_e01_tampered_hash() -> Vec<u8> {
     E01Builder::new(512 * 64).with_md5([0xBAu8; 16]).build()
 }
+
+// ── libewf-grounded builders ──────────────────────────────────────────────────
+//
+// Sources: libewf/libewf_segment_file.c, the ewf_data_t struct (1052 bytes):
+//   [0]      media_type (u8): 0x00=removable, 0x01=fixed, 0x03=optical, 0x0e=LVF, 0x10=memory
+//   [1..4]   unknown1 (zeros)
+//   [4..8]   number_of_chunks (u32 LE)
+//   [8..12]  sectors_per_chunk (u32 LE)
+//   [12..16] bytes_per_sector (u32 LE)
+//   [16..24] number_of_sectors (u64 LE)
+//   [24..36] CHS geometry (3×u32)
+//   [36]     media_flags (u8)
+//   [37..40] unknown2 (zeros)
+//   [40..44] palm_volume_start_sector (u32)
+//   [44..48] unknown3 (u32)
+//   [48..52] smart_logs_start_sector (u32)
+//   [52]     compression_level (u8)
+//   [53..56] unknown4 (zeros)
+//   [56..60] error_granularity (u32)
+//   [60..64] unknown5 (u32)
+//   [64..80] set_identifier / GUID (16 bytes)
+//   [80..1043] unknown6 (zeros, 963 bytes)
+//   [1043..1048] signature (5 reserved bytes)
+//   [1048..1052] checksum (Adler-32 of bytes 0..1048)
+
+const FULL_VOLUME_DATA_SIZE: usize = 1052;
+
+/// Build an ewf_data_t body (1052 bytes) with the given parameters.
+/// `guid` = None leaves set_identifier as zeros (same GUID).
+pub fn make_full_volume_body(
+    chunk_count: u32,
+    sectors_per_chunk: u32,
+    bytes_per_sector: u32,
+    sector_count: u64,
+    media_type: u8,
+    guid: Option<[u8; 16]>,
+    corrupt_crc: bool,
+) -> Vec<u8> {
+    let mut body = vec![0u8; FULL_VOLUME_DATA_SIZE];
+    body[0] = media_type;
+    body[4..8].copy_from_slice(&chunk_count.to_le_bytes());
+    body[8..12].copy_from_slice(&sectors_per_chunk.to_le_bytes());
+    body[12..16].copy_from_slice(&bytes_per_sector.to_le_bytes());
+    body[16..24].copy_from_slice(&sector_count.to_le_bytes());
+    if let Some(g) = guid {
+        body[64..80].copy_from_slice(&g);
+    }
+    // Adler-32 over bytes 0..1048
+    let crc = if corrupt_crc {
+        0xDEAD_BEEFu32
+    } else {
+        adler32(&body[..1048])
+    };
+    body[1048..1052].copy_from_slice(&crc.to_le_bytes());
+    body
+}
+
+/// Build a minimal E01 with a full 1052-byte volume section.
+fn make_e01_with_full_volume(
+    media_type: u8,
+    guid: Option<[u8; 16]>,
+    corrupt_crc: bool,
+) -> Vec<u8> {
+    const SPC: u32 = 64;
+    const BPS: u32 = 512;
+    const CHUNK_COUNT: u32 = 1;
+    let sector_count = u64::from(SPC) * u64::from(CHUNK_COUNT);
+    let chunk_size = u64::from(SPC) * u64::from(BPS);
+    let sectors_data = vec![0u8; chunk_size as usize];
+    let md5: [u8; 16] = compute_md5(&sectors_data);
+
+    let mut buf = Vec::new();
+
+    // File header
+    buf.extend_from_slice(&EVF_SIGNATURE);
+    buf.push(0x01); // fields_start
+    buf.extend_from_slice(&1u16.to_le_bytes()); // segment_number
+    buf.extend_from_slice(&0u16.to_le_bytes()); // fields_end
+
+    // Header section (minimal: just a null byte)
+    let header_data = b"\x00";
+    let header_desc_off = buf.len() as u64;
+    let header_section_size = (SECTION_DESCRIPTOR_SIZE + header_data.len()) as u64;
+    let volume_desc_off = header_desc_off + header_section_size;
+    buf.extend_from_slice(&make_section_descriptor("header", volume_desc_off, header_section_size));
+    buf.extend_from_slice(header_data);
+
+    // Volume section with full 1052-byte body
+    let vol_body = make_full_volume_body(CHUNK_COUNT, SPC, BPS, sector_count, media_type, guid, corrupt_crc);
+    let vol_section_size = (SECTION_DESCRIPTOR_SIZE + FULL_VOLUME_DATA_SIZE) as u64;
+    let table_desc_off = volume_desc_off + vol_section_size;
+    buf.extend_from_slice(&make_section_descriptor("volume", table_desc_off, vol_section_size));
+    buf.extend_from_slice(&vol_body);
+
+    // Table section
+    let table_header_size: u64 = 24;
+    let table_entries_size = u64::from(CHUNK_COUNT) * 4;
+    let table_section_size = SECTION_DESCRIPTOR_SIZE as u64 + table_header_size + table_entries_size;
+    let sectors_desc_off = table_desc_off + table_section_size;
+    buf.extend_from_slice(&make_section_descriptor("table", sectors_desc_off, table_section_size));
+    let sectors_data_start = sectors_desc_off + SECTION_DESCRIPTOR_SIZE as u64;
+    let mut tbl_hdr = vec![0u8; 24];
+    tbl_hdr[0..4].copy_from_slice(&CHUNK_COUNT.to_le_bytes());
+    tbl_hdr[8..16].copy_from_slice(&sectors_data_start.to_le_bytes());
+    let tbl_crc = adler32(&tbl_hdr[..16]);
+    tbl_hdr[16..20].copy_from_slice(&tbl_crc.to_le_bytes());
+    buf.extend_from_slice(&tbl_hdr);
+    buf.extend_from_slice(&0u32.to_le_bytes()); // one entry: offset 0
+
+    // Sectors section
+    let sectors_section_size = SECTION_DESCRIPTOR_SIZE as u64 + chunk_size;
+    let hash_desc_off = sectors_desc_off + sectors_section_size;
+    buf.extend_from_slice(&make_section_descriptor("sectors", hash_desc_off, sectors_section_size));
+    buf.extend_from_slice(&sectors_data);
+
+    // Hash section
+    let hash_section_size = SECTION_DESCRIPTOR_SIZE as u64 + 16;
+    let done_desc_off = hash_desc_off + hash_section_size;
+    buf.extend_from_slice(&make_section_descriptor("hash", done_desc_off, hash_section_size));
+    buf.extend_from_slice(&md5);
+
+    // Done section (self-referential)
+    let done_section_size = SECTION_DESCRIPTOR_SIZE as u64;
+    buf.extend_from_slice(&make_section_descriptor("done", done_desc_off, done_section_size));
+
+    buf
+}
+
+/// E01 with a full 1052-byte volume section and correct Adler-32.
+pub fn make_e01_full_volume_clean() -> Vec<u8> {
+    make_e01_with_full_volume(0x01, None, false)
+}
+
+/// E01 with a full 1052-byte volume section and a corrupt Adler-32.
+pub fn make_e01_full_volume_bad_crc() -> Vec<u8> {
+    make_e01_with_full_volume(0x01, None, true)
+}
+
+/// E01 images with each valid media_type value. Returns (media_type, image) pairs.
+pub fn make_e01_valid_media_types() -> Vec<(u8, Vec<u8>)> {
+    // Valid values from libewf: 0x00=removable, 0x01=fixed, 0x03=optical, 0x0e=LVF, 0x10=memory
+    [0x00u8, 0x01, 0x03, 0x0e, 0x10]
+        .iter()
+        .map(|&mt| (mt, make_e01_with_full_volume(mt, None, false)))
+        .collect()
+}
+
+/// E01 with an unrecognised media_type byte.
+pub fn make_e01_unknown_media_type(media_type: u8) -> Vec<u8> {
+    make_e01_with_full_volume(media_type, None, false)
+}
+
+/// Two-segment image where both volume sections carry the SAME GUID.
+pub fn make_two_segment_matching_guids() -> (Vec<u8>, Vec<u8>) {
+    let guid = [0x11u8; 16];
+    let seg1 = make_e01_nonfinal_with_guid(guid, 1);
+    let seg2 = make_e01_final_with_guid(guid, 2);
+    (seg1, seg2)
+}
+
+/// Two-segment image where the second segment carries a DIFFERENT GUID.
+pub fn make_two_segment_guid_mismatch() -> (Vec<u8>, Vec<u8>) {
+    let guid1 = [0x11u8; 16];
+    let guid2 = [0xFFu8; 16]; // different!
+    let seg1 = make_e01_nonfinal_with_guid(guid1, 1);
+    let seg2 = make_e01_final_with_guid(guid2, 2);
+    (seg1, seg2)
+}
+
+/// Non-final segment (ends with "next") with a full volume section containing a GUID.
+fn make_e01_nonfinal_with_guid(guid: [u8; 16], seg_num: u16) -> Vec<u8> {
+    const SPC: u32 = 64;
+    const BPS: u32 = 512;
+    const CHUNK_COUNT: u32 = 1;
+    let sector_count = u64::from(SPC) * u64::from(CHUNK_COUNT);
+    let chunk_size = u64::from(SPC) * u64::from(BPS);
+
+    let mut buf = Vec::new();
+
+    // File header
+    buf.extend_from_slice(&EVF_SIGNATURE);
+    buf.push(0x01);
+    buf.extend_from_slice(&seg_num.to_le_bytes());
+    buf.extend_from_slice(&0u16.to_le_bytes());
+
+    // Header section
+    let header_data = b"\x00";
+    let hdr_off = buf.len() as u64;
+    let hdr_size = (SECTION_DESCRIPTOR_SIZE + header_data.len()) as u64;
+    let vol_off = hdr_off + hdr_size;
+    buf.extend_from_slice(&make_section_descriptor("header", vol_off, hdr_size));
+    buf.extend_from_slice(header_data);
+
+    // Volume section with GUID
+    let vol_body = make_full_volume_body(CHUNK_COUNT * 2, SPC, BPS, sector_count * 2, 0x01, Some(guid), false);
+    let vol_size = (SECTION_DESCRIPTOR_SIZE + FULL_VOLUME_DATA_SIZE) as u64;
+    let tbl_off = vol_off + vol_size;
+    buf.extend_from_slice(&make_section_descriptor("volume", tbl_off, vol_size));
+    buf.extend_from_slice(&vol_body);
+
+    // Table
+    let tbl_entries_size = u64::from(CHUNK_COUNT) * 4;
+    let tbl_section_size = SECTION_DESCRIPTOR_SIZE as u64 + 24 + tbl_entries_size;
+    let sectors_off = tbl_off + tbl_section_size;
+    buf.extend_from_slice(&make_section_descriptor("table", sectors_off, tbl_section_size));
+    let sectors_data_start = sectors_off + SECTION_DESCRIPTOR_SIZE as u64;
+    let mut tbl_hdr = vec![0u8; 24];
+    tbl_hdr[0..4].copy_from_slice(&CHUNK_COUNT.to_le_bytes());
+    tbl_hdr[8..16].copy_from_slice(&sectors_data_start.to_le_bytes());
+    let tbl_crc = adler32(&tbl_hdr[..16]);
+    tbl_hdr[16..20].copy_from_slice(&tbl_crc.to_le_bytes());
+    buf.extend_from_slice(&tbl_hdr);
+    buf.extend_from_slice(&0u32.to_le_bytes());
+
+    // Sectors
+    let sectors_data = vec![0u8; chunk_size as usize];
+    let sectors_section_size = SECTION_DESCRIPTOR_SIZE as u64 + chunk_size;
+    let next_off = sectors_off + sectors_section_size;
+    buf.extend_from_slice(&make_section_descriptor("sectors", next_off, sectors_section_size));
+    buf.extend_from_slice(&sectors_data);
+
+    // Next (self-referential)
+    let next_section_size = SECTION_DESCRIPTOR_SIZE as u64;
+    buf.extend_from_slice(&make_section_descriptor("next", next_off, next_section_size));
+
+    buf
+}
+
+/// Final segment with a volume section containing a GUID (some tools repeat it).
+fn make_e01_final_with_guid(guid: [u8; 16], seg_num: u16) -> Vec<u8> {
+    const SPC: u32 = 64;
+    const BPS: u32 = 512;
+    const CHUNK_COUNT: u32 = 1;
+    let sector_count = u64::from(SPC) * u64::from(CHUNK_COUNT);
+    let chunk_size = u64::from(SPC) * u64::from(BPS);
+    let sectors_data = vec![0u8; chunk_size as usize];
+
+    // Compute combined MD5 of 2 chunks of zeros
+    let combined_data = vec![0u8; chunk_size as usize * 2];
+    let md5: [u8; 16] = compute_md5(&combined_data);
+
+    let mut buf = Vec::new();
+
+    // File header
+    buf.extend_from_slice(&EVF_SIGNATURE);
+    buf.push(0x01);
+    buf.extend_from_slice(&seg_num.to_le_bytes());
+    buf.extend_from_slice(&0u16.to_le_bytes());
+
+    // Header section
+    let header_data = b"\x00";
+    let hdr_off = buf.len() as u64;
+    let hdr_size = (SECTION_DESCRIPTOR_SIZE + header_data.len()) as u64;
+    let vol_off = hdr_off + hdr_size;
+    buf.extend_from_slice(&make_section_descriptor("header", vol_off, hdr_size));
+    buf.extend_from_slice(header_data);
+
+    // Volume section with GUID (some tools write it in every segment)
+    let vol_body = make_full_volume_body(CHUNK_COUNT * 2, SPC, BPS, sector_count * 2, 0x01, Some(guid), false);
+    let vol_size = (SECTION_DESCRIPTOR_SIZE + FULL_VOLUME_DATA_SIZE) as u64;
+    let tbl_off = vol_off + vol_size;
+    buf.extend_from_slice(&make_section_descriptor("volume", tbl_off, vol_size));
+    buf.extend_from_slice(&vol_body);
+
+    // Table
+    let tbl_entries_size = u64::from(CHUNK_COUNT) * 4;
+    let tbl_section_size = SECTION_DESCRIPTOR_SIZE as u64 + 24 + tbl_entries_size;
+    let sectors_off = tbl_off + tbl_section_size;
+    buf.extend_from_slice(&make_section_descriptor("table", sectors_off, tbl_section_size));
+    let sectors_data_start = sectors_off + SECTION_DESCRIPTOR_SIZE as u64;
+    let mut tbl_hdr = vec![0u8; 24];
+    tbl_hdr[0..4].copy_from_slice(&CHUNK_COUNT.to_le_bytes());
+    tbl_hdr[8..16].copy_from_slice(&sectors_data_start.to_le_bytes());
+    let tbl_crc = adler32(&tbl_hdr[..16]);
+    tbl_hdr[16..20].copy_from_slice(&tbl_crc.to_le_bytes());
+    buf.extend_from_slice(&tbl_hdr);
+    buf.extend_from_slice(&0u32.to_le_bytes());
+
+    // Sectors
+    let sectors_section_size = SECTION_DESCRIPTOR_SIZE as u64 + chunk_size;
+    let hash_off = sectors_off + sectors_section_size;
+    buf.extend_from_slice(&make_section_descriptor("sectors", hash_off, sectors_section_size));
+    buf.extend_from_slice(&sectors_data);
+
+    // Hash
+    let hash_section_size = SECTION_DESCRIPTOR_SIZE as u64 + 16;
+    let done_off = hash_off + hash_section_size;
+    buf.extend_from_slice(&make_section_descriptor("hash", done_off, hash_section_size));
+    buf.extend_from_slice(&md5);
+
+    // Done
+    let done_section_size = SECTION_DESCRIPTOR_SIZE as u64;
+    buf.extend_from_slice(&make_section_descriptor("done", done_off, done_section_size));
+
+    buf
+}
+
+/// EWF v1 segment with DVF signature: { 0x64, 0x76, 0x66, 0x09, 0x0d, 0x0a, 0xff, 0x00 }
+/// DiskSig format — used by some Tableau/older tools.
+pub fn make_dvf_segment() -> Vec<u8> {
+    const DVF_SIGNATURE: [u8; 8] = [0x64, 0x76, 0x66, 0x09, 0x0d, 0x0a, 0xff, 0x00];
+    E01Builder::new(512 * 64)
+        .with_signature(DVF_SIGNATURE)
+        .build()
+}
+
+/// EWF v1 segment with LVF signature: { 0x4c, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00 }
+/// Logical Volume Format — logical evidence images.
+pub fn make_lvf_segment() -> Vec<u8> {
+    const LVF_SIGNATURE: [u8; 8] = [0x4c, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
+    E01Builder::new(512 * 64)
+        .with_signature(LVF_SIGNATURE)
+        .build()
+}
