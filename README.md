@@ -10,7 +10,7 @@
 [![Rust 1.82+](https://img.shields.io/badge/rust-1.82%2B-orange.svg)](https://www.rust-lang.org)
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
 
-**Analyse. Triage. Repair. Trust.**
+**Verify the image. Trust the evidence.**
 
 `ewf-forensic` is a zero-dependency\* Rust library that reads raw EWF v1 (E01) bytes and reports exactly what is wrong — and what can be fixed automatically — without modifying your original evidence.
 
