@@ -1,6 +1,6 @@
 use flate2::read::ZlibDecoder;
 use md5::{Digest as _, Md5};
-use sha1::{Digest as _, Sha1};
+use sha1::Sha1;
 use std::io::Read as _;
 
 // ── EWF v1 constants ─────────────────────────────────────────────────────────
