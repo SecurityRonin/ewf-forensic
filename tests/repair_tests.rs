@@ -1,37 +1,32 @@
 mod builder;
 
 use builder::E01Builder;
-use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, EwfRepair};
+use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly};
+
+#[allow(deprecated)]
+use ewf_forensic::EwfRepair;
 
 fn clean_image() -> Vec<u8> {
     E01Builder::new(512 * 64).build()
 }
 
-// Test R1: clean image needs no repairs
+// ── Backward-compat: old EwfRepair API must still work ────────────────────────
+
+#[allow(deprecated)]
 #[test]
 fn repair_clean_image_no_repairs() {
     let image = clean_image();
     let result = EwfRepair::new(image).repair();
-    assert!(
-        result.repairs.is_empty(),
-        "clean image should need no repairs"
-    );
-    assert!(
-        result.cannot_repair.is_empty(),
-        "clean image should have no unrepairable issues"
-    );
+    assert!(result.repairs.is_empty(), "clean image should need no repairs");
+    assert!(result.cannot_repair.is_empty());
 }
 
-// Test R2: section descriptor CRC mismatch is repairable
+#[allow(deprecated)]
 #[test]
 fn repair_crc_mismatch_is_repaired() {
     let image = E01Builder::new(512 * 64).with_corrupt_volume_crc().build();
     let result = EwfRepair::new(image).repair();
-    assert!(
-        !result.repairs.is_empty(),
-        "expected at least one repair action"
-    );
-    // After repair, running integrity should find no CRC errors
+    assert!(!result.repairs.is_empty(), "expected at least one repair action");
     let post = EwfIntegrity::new(&result.segments[0]).analyse();
     assert!(
         !post
@@ -41,7 +36,7 @@ fn repair_crc_mismatch_is_repaired() {
     );
 }
 
-// Test R3: hash mismatch cannot be repaired automatically
+#[allow(deprecated)]
 #[test]
 fn repair_hash_mismatch_not_repairable() {
     let bad_hash = [0xBAu8; 16];
@@ -49,7 +44,6 @@ fn repair_hash_mismatch_not_repairable() {
     let result = EwfRepair::new(image).repair();
     assert!(
         !result.cannot_repair.is_empty(),
-        "hash mismatch should be flagged as unrepairable; got: {result:#?}",
-        result = result.cannot_repair,
+        "hash mismatch should be flagged as unrepairable"
     );
 }
