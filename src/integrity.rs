@@ -77,6 +77,16 @@ pub enum EwfIntegrityAnomaly {
         entry_offset: u64,
         file_size: u64,
     },
+    TableEntryOutsideSectorsRange {
+        chunk_index: u32,
+        entry_offset: u64,
+        sectors_start: u64,
+        sectors_end: u64,
+    },
+    SectionGapZero {
+        gap_offset: u64,
+        gap_size: u64,
+    },
     HashMismatch {
         computed: [u8; 16],
         stored: [u8; 16],
@@ -100,6 +110,8 @@ impl EwfIntegrityAnomaly {
             Self::BytesPerSectorInvalid { .. } => Severity::Error,
             Self::TableChunkCountMismatch { .. } => Severity::Error,
             Self::TableEntryOutOfBounds { .. } => Severity::Error,
+            Self::TableEntryOutsideSectorsRange { .. } => Severity::Error,
+            Self::SectionGapZero { .. } => Severity::Info,
             Self::HashMismatch { .. } => Severity::Error,
             Self::HashSectionMissing => Severity::Warning,
         }
@@ -152,11 +164,17 @@ impl<'a> EwfIntegrity<'a> {
         };
 
         // ── Layer 5: Table integrity ──────────────────────────────────────────
+        let sectors_range = sections.iter().find(|s| s.type_name == "sectors").map(|s| {
+            let data_start = s.offset + SECTION_DESCRIPTOR_SIZE as u64;
+            let data_end = s.offset + s.size;
+            (data_start, data_end)
+        });
         if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
             self.check_table(
                 table.offset,
                 chunk_count_from_volume,
                 file_size,
+                sectors_range,
                 &mut issues,
             );
         }
@@ -287,6 +305,11 @@ impl<'a> EwfIntegrity<'a> {
                         gap_offset,
                         gap_size,
                     });
+                } else {
+                    issues.push(EwfIntegrityAnomaly::SectionGapZero {
+                        gap_offset,
+                        gap_size,
+                    });
                 }
             }
 
@@ -336,6 +359,7 @@ impl<'a> EwfIntegrity<'a> {
         desc_offset: u64,
         volume_chunk_count: Option<u32>,
         file_size: u64,
+        sectors_range: Option<(u64, u64)>,
         issues: &mut Vec<EwfIntegrityAnomaly>,
     ) {
         let data_start = (desc_offset as usize) + SECTION_DESCRIPTOR_SIZE;
@@ -373,6 +397,15 @@ impl<'a> EwfIntegrity<'a> {
                     entry_offset: absolute_offset,
                     file_size,
                 });
+            } else if let Some((sec_start, sec_end)) = sectors_range {
+                if absolute_offset < sec_start || absolute_offset >= sec_end {
+                    issues.push(EwfIntegrityAnomaly::TableEntryOutsideSectorsRange {
+                        chunk_index: i,
+                        entry_offset: absolute_offset,
+                        sectors_start: sec_start,
+                        sectors_end: sec_end,
+                    });
+                }
             }
         }
     }
