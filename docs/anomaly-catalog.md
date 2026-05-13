@@ -12,8 +12,8 @@ The library cannot determine intent. Accidental corruption and deliberate tamper
 |-------|------|-----------------|
 | Evidence tamperer | Modify sector content after acquisition | `HashMismatch` |
 | Evidence suppressor | Prevent the image from being read | `InvalidSignature`, `VolumeSectionMissing`, `SectionChainBroken` |
-| Data concealer | Hide information outside the standard chain | `SectionGapNonZero`, `UnknownSectionType` |
-| Evidence redirector | Make forensic tools reconstruct the wrong filesystem | `BytesPerSectorInvalid`, `ChunkSizeInvalid`, `TableEntryOutOfBounds` |
+| Data concealer | Hide information outside the standard chain | `SectionGapNonZero`, `SectionGapZero`, `UnknownSectionType` |
+| Evidence redirector | Make forensic tools reconstruct the wrong filesystem | `BytesPerSectorInvalid`, `ChunkSizeInvalid`, `TableEntryOutOfBounds`, `TableEntryOutsideSectorsRange` |
 | Parser attacker | Crash or OOM the forensic workstation | `SectionChainBroken` (cycle), `TableEntryOutOfBounds` |
 | Anti-forensic evader | Make tampering look clean to naive tools | recomputed Adler-32, MD5 collision |
 | Storage / acquisition failure | No malicious intent | any anomaly, especially `DoneSectionMissing` |
@@ -298,12 +298,12 @@ If an attacker modifies a section descriptor field and then recomputes the Adler
 
 ---
 
-### Table entries pointing inside-file but outside the sectors section
+### Recomputed Adler-32 does not prove the descriptor is structurally intact
 
-A table entry that resolves to a position within the file but within a section descriptor or the table itself is not flagged — only entries resolving ≥ file_size produce `TableEntryOutOfBounds`. A future layer could validate that all entries fall within the sectors section's declared range.
+If an attacker rewrites a table entry's absolute offset to point somewhere inside the file — but outside the sectors data body — the Adler-32 CRC on the section descriptor is unaffected and will not catch the redirect. Layer 6 now detects this case as `TableEntryOutsideSectorsRange` (Error), which fires when a chunk offset resolves inside the file but outside `[sectors_data_start, sectors_data_start + sectors_data_size)`. This catches entries pointing into header descriptors, the table itself, or the hash section.
 
 ---
 
-### Zero-byte inter-section gaps are not flagged
+### Zero-byte inter-section gaps
 
-`SectionGapNonZero` only reports gaps containing at least one non-zero byte. An attacker who zeroes the gap region before removing a payload leaves no detectable trace via this check. The gap's existence (even zeroed) could be noted as anomalous, but zero-gap padding is sometimes produced legitimately by alignment-conscious acquisition tools.
+Zero-filled bytes between consecutive sections are now flagged as `SectionGapZero` (Info). While zero-gap padding is sometimes produced legitimately by alignment-conscious acquisition tools, the gap's existence is worth noting — an attacker who zeroed a payload region before removing it leaves a structurally visible trace. Analysts should investigate any gap, zero or not, against the expected section layout for the acquisition tool that produced the image.

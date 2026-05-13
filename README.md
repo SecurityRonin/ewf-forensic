@@ -50,6 +50,7 @@ ewf-forensic = "0.1"
 |---------|----------|
 | `SectionChainBroken { at_offset, next_offset }` — `next` pointer is zero, past EOF, or points backward (cycle) | **Critical** |
 | `SectionGapNonZero { gap_offset, gap_size }` — non-zero bytes exist between consecutive sections | Warning |
+| `SectionGapZero { gap_offset, gap_size }` — zero-filled bytes exist between consecutive sections (legitimate in alignment-padded images; noted as structural anomaly) | Info |
 
 ### Layer 4 — Section Completeness
 
@@ -73,6 +74,7 @@ ewf-forensic = "0.1"
 |---------|----------|
 | `TableChunkCountMismatch { in_volume, in_table }` — entry count in table header differs from volume | Error |
 | `TableEntryOutOfBounds { chunk_index, entry_offset, file_size }` — chunk offset resolves past EOF | Error |
+| `TableEntryOutsideSectorsRange { chunk_index, entry_offset, sectors_start, sectors_end }` — entry resolves inside the file but outside the sectors data body (e.g., into a descriptor or the table itself) | Error |
 
 ### Layer 7 — Hash Verification
 
@@ -187,6 +189,12 @@ cargo +nightly fuzz run fuzz_repair
 ```
 
 Both targets run in CI for 30 seconds on every push. To run longer locally, remove `-max_total_time`.
+
+---
+
+## Anomaly Catalog
+
+[`docs/anomaly-catalog.md`](docs/anomaly-catalog.md) maps every detectable anomaly to its threat scenario — evidence suppression, modification, insertion, redirection, and parser exploitation — and documents known detection limits.
 
 ---
 
