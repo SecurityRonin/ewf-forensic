@@ -799,6 +799,9 @@ fn check_hash_all_segments(
     let mut md5_h = Md5::new();
     let mut sha1_h = Sha1::new();
 
+    let chunk_size_usize = chunk_size as usize;
+    let mut global_chunk_idx: usize = 0;
+
     'outer: for (&seg_data, sections) in segments.iter().zip(all_sections.iter()) {
         for (start, end, compressed) in iter_segment_chunks(seg_data, sections) {
             if bytes_remaining == 0 {
@@ -806,6 +809,30 @@ fn check_hash_all_segments(
             }
             let to_hash = bytes_remaining.min(chunk_size) as usize;
             let raw = &seg_data[start..end];
+
+            // Per-chunk Adler-32 (ewfverify parity).
+            //
+            // Compressed chunks are self-checksummed by the zlib stream (RFC 1950
+            // appends its own big-endian Adler-32 internally); decompression failure
+            // already catches corruption via the HashMismatch path.
+            //
+            // Uncompressed chunks MAY have a separate 4-byte little-endian Adler-32
+            // appended by the acquisition tool. Presence is detected by
+            // raw.len() > chunk_size (the chunk byte range includes extra bytes).
+            let has_uncompressed_checksum = !compressed && (raw.len() > chunk_size_usize);
+            if has_uncompressed_checksum && raw.len() >= chunk_size_usize + 4 {
+                let crc_end = chunk_size_usize;
+                let stored = u32::from_le_bytes(raw[crc_end..crc_end + 4].try_into().unwrap());
+                let computed = adler32(&raw[..crc_end]);
+                if computed != stored {
+                    issues.push(EwfIntegrityAnomaly::ChunkChecksumMismatch {
+                        chunk_index: global_chunk_idx,
+                        computed,
+                        stored,
+                    });
+                }
+            }
+            global_chunk_idx += 1;
 
             if compressed {
                 let limit = (to_hash as u64).saturating_add(1);
@@ -822,6 +849,8 @@ fn check_hash_all_segments(
                 md5_h.update(slice);
                 sha1_h.update(slice);
             } else {
+                // For uncompressed chunks with trailing checksum, raw.len() = chunk_size + 4;
+                // hash only the sector data (to_hash bytes), not the trailing checksum.
                 let slice = &raw[..raw.len().min(to_hash)];
                 md5_h.update(slice);
                 sha1_h.update(slice);
