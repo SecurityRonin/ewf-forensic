@@ -161,6 +161,13 @@ pub enum EwfIntegrityAnomaly {
     Ewf2ChunkSizeInvalid { sectors_per_chunk: u32 },
     /// sector_count in the EWF v2 media info section is zero.
     Ewf2SectorCountZero,
+    /// The Adler-32 stored at the end of a chunk's byte range does not match
+    /// the Adler-32 computed over the chunk's raw (possibly compressed) bytes.
+    ChunkChecksumMismatch {
+        chunk_index: usize,
+        computed: u32,
+        stored: u32,
+    },
 }
 
 impl EwfIntegrityAnomaly {
@@ -197,6 +204,7 @@ impl EwfIntegrityAnomaly {
             Self::Ewf2BytesPerSectorInvalid { .. } => Severity::Error,
             Self::Ewf2ChunkSizeInvalid { .. } => Severity::Error,
             Self::Ewf2SectorCountZero => Severity::Error,
+            Self::ChunkChecksumMismatch { .. } => Severity::Error,
         }
     }
 }

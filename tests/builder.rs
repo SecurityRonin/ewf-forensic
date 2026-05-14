@@ -259,6 +259,12 @@ pub struct E01Builder {
     /// If set, insert a "digest" section containing the given SHA-1 bytes.
     /// The digest section's MD5 field is computed from sectors data.
     pub digest_sha1_override: Option<[u8; 20]>,
+    /// Write per-chunk Adler-32 checksums (4 bytes after each chunk's raw data).
+    /// Matches the layout used by real acquisition tools (libewf, FTK, X-Ways).
+    pub chunk_checksums: bool,
+    /// If Some(i), corrupt the stored Adler-32 of chunk i by XOR-ing 0xFF into byte 0.
+    /// Only active when chunk_checksums is true.
+    pub corrupt_chunk_checksum: Option<usize>,
 }
 
 impl E01Builder {
@@ -287,6 +293,8 @@ impl E01Builder {
             nonfinal: false,
             volume_chunk_count_override: None,
             digest_sha1_override: None,
+            chunk_checksums: false,
+            corrupt_chunk_checksum: None,
         }
     }
 
@@ -312,6 +320,10 @@ impl E01Builder {
     pub fn with_volume_chunk_count(mut self, n: u32) -> Self { self.volume_chunk_count_override = Some(n); self }
     /// Insert a "digest" section with the given SHA-1 (MD5 computed from actual sectors data).
     pub fn with_digest_sha1(mut self, sha1: [u8; 20]) -> Self { self.digest_sha1_override = Some(sha1); self }
+    /// Write per-chunk Adler-32 checksums — matches real acquisition tool output.
+    pub fn with_chunk_checksums(mut self) -> Self { self.chunk_checksums = true; self }
+    /// Corrupt the Adler-32 checksum of chunk `idx` (requires chunk_checksums = true).
+    pub fn with_corrupt_chunk_checksum(mut self, idx: usize) -> Self { self.corrupt_chunk_checksum = Some(idx); self }
 
     pub fn build(self) -> Vec<u8> {
         let spc = self.sectors_per_chunk;
@@ -324,7 +336,9 @@ impl E01Builder {
         let volume_section_size: u64 = (SECTION_DESCRIPTOR_SIZE + VOLUME_DATA_SIZE) as u64;
         let table_data_size: u64 = 24 + 4 * u64::from(chunk_count);
         let table_section_size = SECTION_DESCRIPTOR_SIZE as u64 + table_data_size;
-        let sectors_data_size = u64::from(chunk_count) * chunk_size;
+        // With per-chunk checksums each chunk occupies chunk_size + 4 bytes in the sectors body.
+        let chunk_stride = if self.chunk_checksums { chunk_size + 4 } else { chunk_size };
+        let sectors_data_size = u64::from(chunk_count) * chunk_stride;
         let sectors_section_size = SECTION_DESCRIPTOR_SIZE as u64 + sectors_data_size;
         let digest_section_size: u64 = if self.digest_sha1_override.is_some() {
             (SECTION_DESCRIPTOR_SIZE + DIGEST_DATA_SIZE) as u64
@@ -414,7 +428,7 @@ impl E01Builder {
             tbl_hdr[16..20].copy_from_slice(&tbl_crc.to_le_bytes());
             buf.extend_from_slice(&tbl_hdr);
             for i in 0..table_chunk_count {
-                let offset = i as u64 * chunk_size;
+                let offset = i as u64 * chunk_stride;
                 let entry = (offset as u32) & 0x7FFF_FFFF;
                 buf.extend_from_slice(&entry.to_le_bytes());
             }
@@ -430,8 +444,21 @@ impl E01Builder {
                 hash_desc_off
             };
             buf.extend_from_slice(&make_section_descriptor("sectors", sectors_next, sectors_section_size));
-            let sectors_data = vec![0u8; sectors_data_size as usize];
-            buf.extend_from_slice(&sectors_data);
+            let chunk_data = vec![0u8; chunk_size as usize];
+            if self.chunk_checksums {
+                for i in 0..chunk_count as usize {
+                    buf.extend_from_slice(&chunk_data);
+                    let mut crc = adler32(&chunk_data).to_le_bytes();
+                    if self.corrupt_chunk_checksum == Some(i) {
+                        crc[0] ^= 0xFF;
+                    }
+                    buf.extend_from_slice(&crc);
+                }
+            } else {
+                let sectors_data = vec![0u8; sectors_data_size as usize];
+                buf.extend_from_slice(&sectors_data);
+            }
+            let sectors_data = vec![0u8; (chunk_size * u64::from(chunk_count)) as usize];
 
             // Optional gaps
             if self.insert_gap {
