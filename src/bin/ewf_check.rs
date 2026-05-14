@@ -1,4 +1,4 @@
-use ewf_forensic::{EwfIntegrityAnomaly, EwfIntegrityPath, Severity};
+use ewf_forensic::{ComputedHashes, EwfIntegrityAnomaly, EwfIntegrityPath, Severity};
 use std::path::PathBuf;
 use std::process;
 
@@ -20,6 +20,8 @@ OPTIONS
     --hash-md5=<hex>          Compare computed MD5 against this hex string (chain-of-custody).
     --hash-sha1=<hex>         Compare computed SHA-1 against this hex string.
     --hash-sha256=<hex>       Compare computed SHA-256 against this hex string.
+    --print-hashes            Compute and print MD5, SHA-1, and SHA-256 of all sector data.
+                              Combined with --json: adds a \"hashes\" object to the JSON output.
     --help                    Show this help and exit.
 
 EXIT CODES
@@ -43,6 +45,7 @@ fn main() {
 
     let mut min_severity = Severity::Info;
     let mut json_mode = false;
+    let mut print_hashes = false;
     let mut hash_md5: Option<[u8; 16]> = None;
     let mut hash_sha1: Option<[u8; 20]> = None;
     let mut hash_sha256: Option<[u8; 32]> = None;
@@ -62,6 +65,8 @@ fn main() {
             };
         } else if arg == "--json" {
             json_mode = true;
+        } else if arg == "--print-hashes" {
+            print_hashes = true;
         } else if let Some(hex) = arg.strip_prefix("--hash-md5=") {
             hash_md5 = Some(parse_hex_fixed::<16>(hex, "--hash-md5"));
         } else if let Some(hex) = arg.strip_prefix("--hash-sha1=") {
@@ -92,9 +97,8 @@ fn main() {
     if let Some(h) = hash_sha1 { checker = checker.with_expected_sha1(h); }
     if let Some(h) = hash_sha256 { checker = checker.with_expected_sha256(h); }
 
-    let findings = match checker.analyse() {
-        Ok(f) => f,
-        Err(e) => {
+    let (findings, computed) = match (checker.analyse(), print_hashes) {
+        (Err(e), _) => {
             if json_mode {
                 println!("{{\"error\": \"{}\"}}", json_escape(&e.to_string()));
             } else {
@@ -102,6 +106,26 @@ fn main() {
             }
             process::exit(2);
         }
+        (Ok(f), true) => {
+            let c = if paths.len() == 1 {
+                EwfIntegrityPath::from_path(&paths[0]).compute_hashes()
+            } else {
+                EwfIntegrityPath::from_paths(&paths).compute_hashes()
+            };
+            let hashes = match c {
+                Err(e) => {
+                    if json_mode {
+                        println!("{{\"error\": \"{}\"}}", json_escape(&e.to_string()));
+                    } else {
+                        eprintln!("error: {e}");
+                    }
+                    process::exit(2);
+                }
+                Ok(h) => h,
+            };
+            (f, hashes)
+        }
+        (Ok(f), false) => (f, None),
     };
 
     let visible: Vec<&EwfIntegrityAnomaly> = findings
@@ -110,9 +134,15 @@ fn main() {
         .collect();
 
     if json_mode {
-        print_json(&visible, &min_severity);
+        print_json(&visible, &min_severity, computed.as_ref());
     } else {
         print_text(&visible, &min_severity);
+        if let Some(ref h) = computed {
+            println!();
+            println!("MD5:    {}", hex_string(&h.md5));
+            println!("SHA-1:  {}", hex_string(&h.sha1));
+            println!("SHA-256: {}", hex_string(&h.sha256));
+        }
     }
 
     process::exit(if visible.is_empty() { 0 } else { 1 });
@@ -135,7 +165,7 @@ fn print_text(visible: &[&EwfIntegrityAnomaly], min_severity: &Severity) {
     }
 }
 
-fn print_json(visible: &[&EwfIntegrityAnomaly], _min_severity: &Severity) {
+fn print_json(visible: &[&EwfIntegrityAnomaly], _min_severity: &Severity, hashes: Option<&ComputedHashes>) {
     let clean = visible.is_empty();
     let count = visible.len();
     let mut out = format!(
@@ -155,7 +185,16 @@ fn print_json(visible: &[&EwfIntegrityAnomaly], _min_severity: &Severity) {
     if !visible.is_empty() {
         out.push_str("\n  ");
     }
-    out.push_str("]\n}");
+    out.push_str("]");
+    if let Some(h) = hashes {
+        out.push_str(&format!(
+            ",\n  \"hashes\": {{\n    \"md5\": \"{}\",\n    \"sha1\": \"{}\",\n    \"sha256\": \"{}\"\n  }}",
+            hex_string(&h.md5),
+            hex_string(&h.sha1),
+            hex_string(&h.sha256),
+        ));
+    }
+    out.push_str("\n}");
     println!("{out}");
 }
 
@@ -236,6 +275,10 @@ fn parse_hex_fixed<const N: usize>(hex: &str, flag: &str) -> [u8; N] {
         }
     }
     out
+}
+
+fn hex_string(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn severity_gte(a: Severity, min: &Severity) -> bool {
