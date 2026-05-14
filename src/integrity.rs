@@ -310,6 +310,14 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// The three hashes computed over all sector data in an EWF image.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputedHashes {
+    pub md5: [u8; 16],
+    pub sha1: [u8; 20],
+    pub sha256: [u8; 32],
+}
+
 // ── Public entry point ────────────────────────────────────────────────────────
 
 pub struct EwfIntegrity<'a> {
@@ -359,6 +367,20 @@ impl<'a> EwfIntegrity<'a> {
     pub fn with_expected_sha256(mut self, hash: [u8; 32]) -> Self {
         self.expected_sha256 = Some(hash);
         self
+    }
+
+    /// Compute MD5, SHA-1, and SHA-256 of all sector data without verifying stored hashes.
+    ///
+    /// Returns `None` if the image is unparseable (too short, invalid signature,
+    /// missing geometry) or is EWF v2 (sector data not yet extractable).
+    pub fn compute_hashes(&self) -> Option<ComputedHashes> {
+        let first = self.segments.first().copied().unwrap_or(&[]);
+        if first.len() >= 8
+            && (first[0..8] == EVF2_SIGNATURE || first[0..8] == LEF2_SIGNATURE)
+        {
+            return None;
+        }
+        compute_hashes_ewf1(&self.segments)
     }
 
     pub fn analyse(&self) -> Vec<EwfIntegrityAnomaly> {
@@ -1054,6 +1076,78 @@ fn check_hash_all_segments(
             });
         }
     }
+}
+
+/// Hash all sector data from EWF v1 segments without running anomaly checks.
+/// This is the independent computation path for `compute_hashes()`.
+fn compute_hashes_ewf1(segments: &[&[u8]]) -> Option<ComputedHashes> {
+    let first = segments.first().copied()?;
+    if first.len() < FILE_HEADER_SIZE {
+        return None;
+    }
+    if first[0..8] != EVF_SIGNATURE && first[0..8] != DVF_SIGNATURE && first[0..8] != LVF_SIGNATURE {
+        return None;
+    }
+
+    let mut dummy = Vec::new();
+    let sections_first = walk_sections_v1(first, &mut dummy);
+    let vol_sec = sections_first
+        .iter()
+        .find(|s| s.type_name == "volume" || s.type_name == "disk")?;
+    let geom = check_volume_v1(first, vol_sec.offset, vol_sec.size, &mut dummy)?;
+
+    let chunk_size = u64::from(geom.sectors_per_chunk) * u64::from(geom.bytes_per_sector);
+    let total_bytes = geom.sector_count * u64::from(geom.bytes_per_sector);
+    let mut bytes_remaining = total_bytes;
+
+    let mut md5_h = Md5::new();
+    let mut sha1_h = Sha1::new();
+    let mut sha256_h = Sha256::new();
+
+    let mut all_sections: Vec<Vec<Section>> = Vec::new();
+    for &seg in segments {
+        let mut d = Vec::new();
+        all_sections.push(walk_sections_v1(seg, &mut d));
+    }
+
+    'outer: for (&seg_data, sections) in segments.iter().zip(all_sections.iter()) {
+        for (start, end, compressed) in iter_segment_chunks(seg_data, sections) {
+            if bytes_remaining == 0 {
+                break 'outer;
+            }
+            let to_hash = bytes_remaining.min(chunk_size) as usize;
+            let raw = &seg_data[start..end];
+
+            if compressed {
+                let limit = (to_hash as u64).saturating_add(1);
+                let mut decompressed = Vec::with_capacity(to_hash);
+                if ZlibDecoder::new(raw)
+                    .take(limit)
+                    .read_to_end(&mut decompressed)
+                    .is_err()
+                {
+                    bytes_remaining = bytes_remaining.saturating_sub(to_hash as u64);
+                    continue;
+                }
+                let slice = &decompressed[..decompressed.len().min(to_hash)];
+                md5_h.update(slice);
+                sha1_h.update(slice);
+                sha256_h.update(slice);
+            } else {
+                let slice = &raw[..raw.len().min(to_hash)];
+                md5_h.update(slice);
+                sha1_h.update(slice);
+                sha256_h.update(slice);
+            }
+            bytes_remaining = bytes_remaining.saturating_sub(to_hash as u64);
+        }
+    }
+
+    Some(ComputedHashes {
+        md5: md5_h.finalize().into(),
+        sha1: sha1_h.finalize().into(),
+        sha256: sha256_h.finalize().into(),
+    })
 }
 
 pub(crate) fn adler32(data: &[u8]) -> u32 {

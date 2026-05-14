@@ -1,4 +1,4 @@
-use crate::integrity::{EwfIntegrity, EwfIntegrityAnomaly};
+use crate::integrity::{ComputedHashes, EwfIntegrity, EwfIntegrityAnomaly};
 use memmap2::Mmap;
 use std::fs::File;
 use std::io;
@@ -68,6 +68,23 @@ impl EwfIntegrityPath {
     pub fn with_expected_sha256(mut self, hash: [u8; 32]) -> Self {
         self.expected_sha256 = Some(hash);
         self
+    }
+
+    /// Memory-map every segment and compute sector data hashes.
+    ///
+    /// Returns `Err` if any segment cannot be opened or mapped.
+    /// Returns `Ok(None)` if the image is unparseable or is EWF v2.
+    pub fn compute_hashes(&self) -> io::Result<Option<ComputedHashes>> {
+        let mmaps = self
+            .segment_paths
+            .iter()
+            .map(|p| {
+                let file = File::open(p)?;
+                unsafe { Mmap::map(&file) }
+            })
+            .collect::<io::Result<Vec<Mmap>>>()?;
+        let seg_refs: Vec<&[u8]> = mmaps.iter().map(|m| m.as_ref()).collect();
+        Ok(EwfIntegrity::from_segments(&seg_refs).compute_hashes())
     }
 
     /// Memory-map every segment and run the full integrity analyser.
