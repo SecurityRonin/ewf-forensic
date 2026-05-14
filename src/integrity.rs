@@ -1,6 +1,7 @@
 use flate2::read::ZlibDecoder;
 use md5::{Digest as _, Md5};
 use sha1::Sha1;
+use sha2::Sha256;
 use std::io::Read as _;
 
 // ── EWF v1 constants ─────────────────────────────────────────────────────────
@@ -168,6 +169,16 @@ pub enum EwfIntegrityAnomaly {
         computed: u32,
         stored: u32,
     },
+    /// A compressed chunk's zlib stream could not be decompressed.
+    /// The chunk index identifies exactly which chunk is corrupt.
+    ChunkDecompressionError {
+        chunk_index: usize,
+    },
+    /// Computed SHA-256 does not match an externally supplied reference.
+    ExternalSha256Mismatch {
+        computed: [u8; 32],
+        expected: [u8; 32],
+    },
 }
 
 impl EwfIntegrityAnomaly {
@@ -205,6 +216,8 @@ impl EwfIntegrityAnomaly {
             Self::Ewf2ChunkSizeInvalid { .. } => Severity::Error,
             Self::Ewf2SectorCountZero => Severity::Error,
             Self::ChunkChecksumMismatch { .. } => Severity::Error,
+            Self::ChunkDecompressionError { .. } => Severity::Error,
+            Self::ExternalSha256Mismatch { .. } => Severity::Critical,
         }
     }
 }
@@ -215,6 +228,7 @@ pub struct EwfIntegrity<'a> {
     segments: Vec<&'a [u8]>,
     expected_md5: Option<[u8; 16]>,
     expected_sha1: Option<[u8; 20]>,
+    expected_sha256: Option<[u8; 32]>,
 }
 
 impl<'a> EwfIntegrity<'a> {
@@ -224,6 +238,7 @@ impl<'a> EwfIntegrity<'a> {
             segments: vec![data],
             expected_md5: None,
             expected_sha1: None,
+            expected_sha256: None,
         }
     }
 
@@ -233,6 +248,7 @@ impl<'a> EwfIntegrity<'a> {
             segments: segs.to_vec(),
             expected_md5: None,
             expected_sha1: None,
+            expected_sha256: None,
         }
     }
 
@@ -247,6 +263,13 @@ impl<'a> EwfIntegrity<'a> {
     /// Mismatch → `ExternalSha1Mismatch` (Critical).
     pub fn with_expected_sha1(mut self, hash: [u8; 20]) -> Self {
         self.expected_sha1 = Some(hash);
+        self
+    }
+
+    /// Compare the computed SHA-256 against an externally-sourced reference.
+    /// Mismatch → `ExternalSha256Mismatch` (Critical).
+    pub fn with_expected_sha256(mut self, hash: [u8; 32]) -> Self {
+        self.expected_sha256 = Some(hash);
         self
     }
 
@@ -365,6 +388,7 @@ impl<'a> EwfIntegrity<'a> {
                 geom,
                 self.expected_md5,
                 self.expected_sha1,
+                self.expected_sha256,
                 &mut issues,
             );
         }
@@ -790,6 +814,7 @@ fn check_hash_all_segments(
     geom: &VolumeGeometry,
     expected_md5: Option<[u8; 16]>,
     expected_sha1: Option<[u8; 20]>,
+    expected_sha256: Option<[u8; 32]>,
     issues: &mut Vec<EwfIntegrityAnomaly>,
 ) {
     let chunk_size = u64::from(geom.sectors_per_chunk) * u64::from(geom.bytes_per_sector);
@@ -798,6 +823,7 @@ fn check_hash_all_segments(
 
     let mut md5_h = Md5::new();
     let mut sha1_h = Sha1::new();
+    let mut sha256_h = Sha256::new();
 
     let chunk_size_usize = chunk_size as usize;
     let mut global_chunk_idx: usize = 0;
@@ -819,6 +845,9 @@ fn check_hash_all_segments(
             // Uncompressed chunks MAY have a separate 4-byte little-endian Adler-32
             // appended by the acquisition tool. Presence is detected by
             // raw.len() > chunk_size (the chunk byte range includes extra bytes).
+            let this_chunk_idx = global_chunk_idx;
+            global_chunk_idx += 1;
+
             let has_uncompressed_checksum = !compressed && (raw.len() > chunk_size_usize);
             if has_uncompressed_checksum && raw.len() >= chunk_size_usize + 4 {
                 let crc_end = chunk_size_usize;
@@ -826,13 +855,12 @@ fn check_hash_all_segments(
                 let computed = adler32(&raw[..crc_end]);
                 if computed != stored {
                     issues.push(EwfIntegrityAnomaly::ChunkChecksumMismatch {
-                        chunk_index: global_chunk_idx,
+                        chunk_index: this_chunk_idx,
                         computed,
                         stored,
                     });
                 }
             }
-            global_chunk_idx += 1;
 
             if compressed {
                 let limit = (to_hash as u64).saturating_add(1);
@@ -842,18 +870,23 @@ fn check_hash_all_segments(
                     .read_to_end(&mut decompressed)
                     .is_err()
                 {
+                    issues.push(EwfIntegrityAnomaly::ChunkDecompressionError {
+                        chunk_index: this_chunk_idx,
+                    });
                     bytes_remaining = bytes_remaining.saturating_sub(to_hash as u64);
                     continue;
                 }
                 let slice = &decompressed[..decompressed.len().min(to_hash)];
                 md5_h.update(slice);
                 sha1_h.update(slice);
+                sha256_h.update(slice);
             } else {
                 // For uncompressed chunks with trailing checksum, raw.len() = chunk_size + 4;
                 // hash only the sector data (to_hash bytes), not the trailing checksum.
                 let slice = &raw[..raw.len().min(to_hash)];
                 md5_h.update(slice);
                 sha1_h.update(slice);
+                sha256_h.update(slice);
             }
             bytes_remaining = bytes_remaining.saturating_sub(to_hash as u64);
         }
@@ -861,6 +894,7 @@ fn check_hash_all_segments(
 
     let computed_md5: [u8; 16] = md5_h.finalize().into();
     let computed_sha1: [u8; 20] = sha1_h.finalize().into();
+    let computed_sha256: [u8; 32] = sha256_h.finalize().into();
 
     let last_sections = match all_sections.last() {
         Some(s) => s,
@@ -916,6 +950,14 @@ fn check_hash_all_segments(
         if computed_sha1 != expected {
             issues.push(EwfIntegrityAnomaly::ExternalSha1Mismatch {
                 computed: computed_sha1,
+                expected,
+            });
+        }
+    }
+    if let Some(expected) = expected_sha256 {
+        if computed_sha256 != expected {
+            issues.push(EwfIntegrityAnomaly::ExternalSha256Mismatch {
+                computed: computed_sha256,
                 expected,
             });
         }

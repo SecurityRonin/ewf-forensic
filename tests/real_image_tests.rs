@@ -42,6 +42,14 @@ fn hex_sha1(s: &str) -> [u8; 20] {
     out
 }
 
+fn hex_sha256(s: &str) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap();
+    }
+    out
+}
+
 // ── Structural sanity ─────────────────────────────────────────────────────────
 
 #[test]
@@ -220,4 +228,126 @@ fn mmls_no_chunk_checksum_mismatch() {
             .any(|a| matches!(a, EwfIntegrityAnomaly::ChunkChecksumMismatch { .. })),
         "clean imageformat_mmls_1.E01 must not produce ChunkChecksumMismatch; got: {findings:#?}"
     );
+}
+
+// ── SHA-256 pinned against ewfverify ground truth ─────────────────────────────
+//
+// ewfverify -d sha256 -q tests/fixtures/<name>.E01 (run 2026-05-14):
+//   exfat1.E01          af6f974495187c35050d5c66d271617a1ec00d446adcf8590d7042ad2bf02bb7
+//   nps-2010-emails.E01 ed4e1b20fb92d9609778d6f687ef478c2ed88d7da18f98b8b023f3dfecd41a9d
+//   imageformat_mmls_1  e7eb6fca46bebeedc4af4cc5bfe9675691bab8ce471315317b561a28899e7902
+//
+// EWF v1 images do not store SHA-256; ewfverify computes it over sector data.
+
+#[test]
+fn exfat1_computed_sha256_matches_ewfverify() {
+    let data = fixture("exfat1.E01");
+    let expected = hex_sha256(
+        "af6f974495187c35050d5c66d271617a1ec00d446adcf8590d7042ad2bf02bb7",
+    );
+    let findings = EwfIntegrity::new(&data)
+        .with_expected_sha256(expected)
+        .analyse();
+    assert!(
+        !findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::ExternalSha256Mismatch { .. })),
+        "computed SHA-256 must match ewfverify ground truth for exfat1.E01;\
+         got: {findings:#?}"
+    );
+}
+
+#[test]
+fn nps_emails_computed_sha256_matches_ewfverify() {
+    let data = fixture("nps-2010-emails.E01");
+    let expected = hex_sha256(
+        "ed4e1b20fb92d9609778d6f687ef478c2ed88d7da18f98b8b023f3dfecd41a9d",
+    );
+    let findings = EwfIntegrity::new(&data)
+        .with_expected_sha256(expected)
+        .analyse();
+    assert!(
+        !findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::ExternalSha256Mismatch { .. })),
+        "computed SHA-256 must match ewfverify ground truth for nps-2010-emails.E01;\
+         got: {findings:#?}"
+    );
+}
+
+#[test]
+fn mmls_computed_sha256_matches_ewfverify() {
+    let data = fixture("imageformat_mmls_1.E01");
+    let expected = hex_sha256(
+        "e7eb6fca46bebeedc4af4cc5bfe9675691bab8ce471315317b561a28899e7902",
+    );
+    let findings = EwfIntegrity::new(&data)
+        .with_expected_sha256(expected)
+        .analyse();
+    assert!(
+        !findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::ExternalSha256Mismatch { .. })),
+        "computed SHA-256 must match ewfverify ground truth for imageformat_mmls_1.E01;\
+         got: {findings:#?}"
+    );
+}
+
+// ── ChunkDecompressionError: corrupt zlib data is localised ──────────────────
+//
+// When a compressed chunk's zlib stream is undecodable, silently skipping
+// produces HashMismatch with no indication of which chunk is corrupt.
+// ChunkDecompressionError must fire with the chunk index.
+//
+// Chunk 0 of exfat1.E01 starts at sectors body_start (first table entry
+// rel=76 = SECTION_DESCRIPTOR_SIZE, so abs = sectors_offset + 76 = body_start).
+// Flipping byte 4 of the stream corrupts the DEFLATE data past the zlib header.
+
+#[test]
+fn corrupt_zlib_chunk_produces_decompression_error_anomaly() {
+    let mut data = fixture("exfat1.E01");
+    let body_start = find_sectors_body_start(&data)
+        .expect("sectors section not found in exfat1.E01");
+    // Offset +4: past the 2-byte zlib CMF/FLG header, into the DEFLATE stream.
+    data[body_start + 4] ^= 0xFF;
+    let findings = EwfIntegrity::new(&data).analyse();
+    assert!(
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::ChunkDecompressionError { .. })),
+        "corrupt DEFLATE stream must produce ChunkDecompressionError; got: {findings:#?}"
+    );
+}
+
+#[test]
+fn chunk_decompression_error_includes_chunk_index() {
+    let mut data = fixture("exfat1.E01");
+    let body_start = find_sectors_body_start(&data)
+        .expect("sectors section not found");
+    data[body_start + 4] ^= 0xFF;
+    let findings = EwfIntegrity::new(&data).analyse();
+    let anomaly = findings
+        .iter()
+        .find(|a| matches!(a, EwfIntegrityAnomaly::ChunkDecompressionError { .. }))
+        .expect("ChunkDecompressionError must be present");
+    // Chunk 0 is the first chunk — index must be 0.
+    assert!(
+        matches!(anomaly, EwfIntegrityAnomaly::ChunkDecompressionError { chunk_index: 0 }),
+        "corrupt chunk 0 must report chunk_index=0; got: {anomaly:?}"
+    );
+}
+
+#[test]
+fn chunk_decompression_error_is_error_severity() {
+    use ewf_forensic::Severity;
+    let mut data = fixture("exfat1.E01");
+    let body_start = find_sectors_body_start(&data)
+        .expect("sectors section not found");
+    data[body_start + 4] ^= 0xFF;
+    let findings = EwfIntegrity::new(&data).analyse();
+    let anomaly = findings
+        .iter()
+        .find(|a| matches!(a, EwfIntegrityAnomaly::ChunkDecompressionError { .. }))
+        .expect("ChunkDecompressionError must be present");
+    assert_eq!(anomaly.severity(), Severity::Error);
 }
