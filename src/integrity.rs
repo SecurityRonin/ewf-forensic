@@ -180,6 +180,11 @@ pub enum EwfIntegrityAnomaly {
         computed: [u8; 32],
         expected: [u8; 32],
     },
+    /// EWF v2 sector data (chunk content) was not verified at the chunk level.
+    /// Section-descriptor integrity hashes and media metadata were checked, but
+    /// decompression and per-sector hashing of chunk data is not yet implemented.
+    /// Callers should treat this image as partially verified.
+    Ewf2SectorDataNotVerified,
 }
 
 impl EwfIntegrityAnomaly {
@@ -219,6 +224,7 @@ impl EwfIntegrityAnomaly {
             Self::ChunkChecksumMismatch { .. } => Severity::Error,
             Self::ChunkDecompressionError { .. } => Severity::Error,
             Self::ExternalSha256Mismatch { .. } => Severity::Critical,
+            Self::Ewf2SectorDataNotVerified => Severity::Info,
         }
     }
 }
@@ -294,6 +300,8 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "chunk {chunk_index}: Adler-32 mismatch (computed 0x{computed:08x}, stored 0x{stored:08x})"),
             Self::ChunkDecompressionError { chunk_index } =>
                 write!(f, "chunk {chunk_index}: zlib decompression failed — chunk data is corrupt"),
+            Self::Ewf2SectorDataNotVerified =>
+                write!(f, "EWF v2: sector data not verified — chunk-level integrity check not yet implemented; image is only partially verified"),
         }
     }
 }
@@ -480,6 +488,10 @@ impl<'a> EwfIntegrity<'a> {
 
     fn analyse_all_ewf2(&self) -> Vec<EwfIntegrityAnomaly> {
         let mut issues = Vec::new();
+        // Sector data (chunk content) is not yet verified at the chunk level.
+        // Section-descriptor hashes and metadata are checked below, but actual
+        // decompression and per-sector hashing is unimplemented. Make this explicit.
+        issues.push(EwfIntegrityAnomaly::Ewf2SectorDataNotVerified);
         let n = self.segments.len();
 
         for (idx, &data) in self.segments.iter().enumerate() {
