@@ -22,6 +22,7 @@ pub struct EwfIntegrityPath {
     segment_paths: Vec<PathBuf>,
     expected_md5: Option<[u8; 16]>,
     expected_sha1: Option<[u8; 20]>,
+    expected_sha256: Option<[u8; 32]>,
 }
 
 impl EwfIntegrityPath {
@@ -36,6 +37,7 @@ impl EwfIntegrityPath {
             segment_paths: discover_segments(base),
             expected_md5: None,
             expected_sha1: None,
+            expected_sha256: None,
         }
     }
 
@@ -45,6 +47,7 @@ impl EwfIntegrityPath {
             segment_paths: paths.iter().map(|p| p.as_ref().to_path_buf()).collect(),
             expected_md5: None,
             expected_sha1: None,
+            expected_sha256: None,
         }
     }
 
@@ -57,6 +60,13 @@ impl EwfIntegrityPath {
     /// Supply an external chain-of-custody SHA-1 to compare against.
     pub fn with_expected_sha1(mut self, hash: [u8; 20]) -> Self {
         self.expected_sha1 = Some(hash);
+        self
+    }
+
+    /// Supply an external chain-of-custody SHA-256 to compare against.
+    /// Mismatch → `ExternalSha256Mismatch` (Critical).
+    pub fn with_expected_sha256(mut self, hash: [u8; 32]) -> Self {
+        self.expected_sha256 = Some(hash);
         self
     }
 
@@ -83,6 +93,9 @@ impl EwfIntegrityPath {
         }
         if let Some(h) = self.expected_sha1 {
             checker = checker.with_expected_sha1(h);
+        }
+        if let Some(h) = self.expected_sha256 {
+            checker = checker.with_expected_sha256(h);
         }
 
         Ok(checker.analyse())

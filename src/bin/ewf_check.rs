@@ -17,6 +17,9 @@ OPTIONS
     --min-severity=<level>    Only report anomalies at or above this severity.
                               Levels: info, warning, error, critical [default: info]
     --json                    Emit machine-readable JSON instead of human text.
+    --hash-md5=<hex>          Compare computed MD5 against this hex string (chain-of-custody).
+    --hash-sha1=<hex>         Compare computed SHA-1 against this hex string.
+    --hash-sha256=<hex>       Compare computed SHA-256 against this hex string.
     --help                    Show this help and exit.
 
 EXIT CODES
@@ -40,6 +43,9 @@ fn main() {
 
     let mut min_severity = Severity::Info;
     let mut json_mode = false;
+    let mut hash_md5: Option<[u8; 16]> = None;
+    let mut hash_sha1: Option<[u8; 20]> = None;
+    let mut hash_sha256: Option<[u8; 32]> = None;
     let mut paths: Vec<PathBuf> = Vec::new();
 
     for arg in &args {
@@ -56,6 +62,12 @@ fn main() {
             };
         } else if arg == "--json" {
             json_mode = true;
+        } else if let Some(hex) = arg.strip_prefix("--hash-md5=") {
+            hash_md5 = Some(parse_hex_fixed::<16>(hex, "--hash-md5"));
+        } else if let Some(hex) = arg.strip_prefix("--hash-sha1=") {
+            hash_sha1 = Some(parse_hex_fixed::<20>(hex, "--hash-sha1"));
+        } else if let Some(hex) = arg.strip_prefix("--hash-sha256=") {
+            hash_sha256 = Some(parse_hex_fixed::<32>(hex, "--hash-sha256"));
         } else if arg.starts_with('-') {
             eprintln!("error: unknown option '{arg}'");
             eprintln!("Run 'ewf-check --help' for usage.");
@@ -71,11 +83,14 @@ fn main() {
         process::exit(2);
     }
 
-    let checker = if paths.len() == 1 {
+    let mut checker = if paths.len() == 1 {
         EwfIntegrityPath::from_path(&paths[0])
     } else {
         EwfIntegrityPath::from_paths(&paths)
     };
+    if let Some(h) = hash_md5 { checker = checker.with_expected_md5(h); }
+    if let Some(h) = hash_sha1 { checker = checker.with_expected_sha1(h); }
+    if let Some(h) = hash_sha256 { checker = checker.with_expected_sha256(h); }
 
     let findings = match checker.analyse() {
         Ok(f) => f,
@@ -195,6 +210,29 @@ fn json_escape(s: &str) -> String {
             '\t' => out.push_str("\\t"),
             c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
             c => out.push(c),
+        }
+    }
+    out
+}
+
+fn parse_hex_fixed<const N: usize>(hex: &str, flag: &str) -> [u8; N] {
+    if hex.len() != N * 2 {
+        eprintln!(
+            "error: {flag} expects exactly {} hex characters (got {})",
+            N * 2,
+            hex.len()
+        );
+        process::exit(2);
+    }
+    let mut out = [0u8; N];
+    for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+        let s = std::str::from_utf8(chunk).unwrap_or("??");
+        match u8::from_str_radix(s, 16) {
+            Ok(b) => out[i] = b,
+            Err(_) => {
+                eprintln!("error: {flag} contains invalid hex character in '{s}'");
+                process::exit(2);
+            }
         }
     }
     out
