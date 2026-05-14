@@ -76,7 +76,7 @@ fn cli_tampered_image_reports_anomaly() {
     let out = ewf_check().arg(f.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("HashMismatch") || stdout.contains("HASH") || stdout.contains("hash"),
+        stdout.contains("mismatch") || stdout.contains("HASH") || stdout.contains("hash"),
         "expected hash anomaly in output; got: {stdout}"
     );
 }

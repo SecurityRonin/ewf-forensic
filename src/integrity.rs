@@ -2,6 +2,7 @@ use flate2::read::ZlibDecoder;
 use md5::{Digest as _, Md5};
 use sha1::Sha1;
 use sha2::Sha256;
+use std::fmt;
 use std::io::Read as _;
 
 // ── EWF v1 constants ─────────────────────────────────────────────────────────
@@ -220,6 +221,85 @@ impl EwfIntegrityAnomaly {
             Self::ExternalSha256Mismatch { .. } => Severity::Critical,
         }
     }
+}
+
+impl fmt::Display for EwfIntegrityAnomaly {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidSignature =>
+                write!(f, "invalid EWF signature — not a valid E01/Ex01 file"),
+            Self::SegmentNumberZero =>
+                write!(f, "segment number is zero (expected ≥ 1)"),
+            Self::SectionDescriptorCrcMismatch { offset, section_type, computed, stored } =>
+                write!(f, "section '{section_type}' at 0x{offset:x}: descriptor CRC mismatch (computed 0x{computed:08x}, stored 0x{stored:08x})"),
+            Self::SectionChainBroken { at_offset, next_offset } =>
+                write!(f, "section chain broken at 0x{at_offset:x}: next pointer 0x{next_offset:x} is invalid"),
+            Self::SectionGapNonZero { gap_offset, gap_size } =>
+                write!(f, "non-zero data in {gap_size}-byte gap at 0x{gap_offset:x} — possible hidden data"),
+            Self::VolumeSectionMissing =>
+                write!(f, "volume/disk section missing in segment 1"),
+            Self::UnknownSectionType { offset, type_name } =>
+                write!(f, "unknown section type '{type_name}' at 0x{offset:x}"),
+            Self::DoneSectionMissing =>
+                write!(f, "done section missing from final segment"),
+            Self::ChunkSizeInvalid { sectors_per_chunk, bytes_per_sector } =>
+                write!(f, "invalid chunk size: {sectors_per_chunk} sectors × {bytes_per_sector} bytes/sector"),
+            Self::SectorCountMismatch { declared, expected } =>
+                write!(f, "sector count mismatch: declared {declared}, expected {expected}"),
+            Self::BytesPerSectorInvalid { bytes_per_sector } =>
+                write!(f, "invalid bytes_per_sector: {bytes_per_sector} (expected 512 or 4096)"),
+            Self::TableChunkCountMismatch { in_volume, in_table } =>
+                write!(f, "chunk count mismatch: volume declares {in_volume}, table has {in_table}"),
+            Self::TableEntryOutOfBounds { chunk_index, entry_offset, file_size } =>
+                write!(f, "table entry for chunk {chunk_index} points outside file: 0x{entry_offset:x} ≥ 0x{file_size:x}"),
+            Self::TableEntryOutsideSectorsRange { chunk_index, entry_offset, sectors_start, sectors_end } =>
+                write!(f, "table entry for chunk {chunk_index} at 0x{entry_offset:x} is outside sectors section [0x{sectors_start:x}..0x{sectors_end:x}]"),
+            Self::SectionGapZero { gap_offset, gap_size } =>
+                write!(f, "zero-padded {gap_size}-byte gap at 0x{gap_offset:x}"),
+            Self::HashMismatch { computed, stored } =>
+                write!(f, "MD5 mismatch: computed {}, stored {}", hex(computed), hex(stored)),
+            Self::HashSectionMissing =>
+                write!(f, "hash section missing — cannot verify MD5"),
+            Self::SegmentOutOfOrder { segment_number, expected } =>
+                write!(f, "segment {segment_number} found where segment {expected} was expected"),
+            Self::DigestSha1Mismatch { computed, stored } =>
+                write!(f, "SHA-1 mismatch: computed {}, stored {}", hex(computed), hex(stored)),
+            Self::ExternalMd5Mismatch { computed, expected } =>
+                write!(f, "MD5 does not match chain-of-custody reference: computed {}, expected {}", hex(computed), hex(expected)),
+            Self::ExternalSha1Mismatch { computed, expected } =>
+                write!(f, "SHA-1 does not match chain-of-custody reference: computed {}, expected {}", hex(computed), hex(expected)),
+            Self::ExternalSha256Mismatch { computed, expected } =>
+                write!(f, "SHA-256 does not match chain-of-custody reference: computed {}, expected {}", hex(computed), hex(expected)),
+            Self::Ewf2SectionDataHashMismatch { offset, section_type_id, computed, stored } =>
+                write!(f, "EWF v2 section (type 0x{section_type_id:02x}) at 0x{offset:x}: data integrity hash mismatch (computed {}, stored {})", hex(computed), hex(stored)),
+            Self::Ewf2EncryptedSection { offset } =>
+                write!(f, "EWF v2 encrypted section at 0x{offset:x} — content not verifiable"),
+            Self::Ewf2HashSectionMissing =>
+                write!(f, "EWF v2 hash section missing from final segment"),
+            Self::VolumeBodyCrcMismatch { computed, stored } =>
+                write!(f, "volume section body CRC mismatch (computed 0x{computed:08x}, stored 0x{stored:08x})"),
+            Self::MediaTypeUnknown { media_type } =>
+                write!(f, "unknown media_type 0x{media_type:02x}"),
+            Self::SetIdentifierMismatch { segment } =>
+                write!(f, "set_identifier GUID mismatch in segment {segment} — segments may be from different acquisitions"),
+            Self::Ewf2MediaInfoMissing =>
+                write!(f, "EWF v2 media information section missing"),
+            Self::Ewf2BytesPerSectorInvalid { bytes_per_sector } =>
+                write!(f, "EWF v2 invalid bytes_per_sector: {bytes_per_sector} (expected 512 or 4096)"),
+            Self::Ewf2ChunkSizeInvalid { sectors_per_chunk } =>
+                write!(f, "EWF v2 invalid sectors_per_chunk: {sectors_per_chunk} (expected non-zero power of two)"),
+            Self::Ewf2SectorCountZero =>
+                write!(f, "EWF v2 sector_count is zero"),
+            Self::ChunkChecksumMismatch { chunk_index, computed, stored } =>
+                write!(f, "chunk {chunk_index}: Adler-32 mismatch (computed 0x{computed:08x}, stored 0x{stored:08x})"),
+            Self::ChunkDecompressionError { chunk_index } =>
+                write!(f, "chunk {chunk_index}: zlib decompression failed — chunk data is corrupt"),
+        }
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 // ── Public entry point ────────────────────────────────────────────────────────

@@ -99,7 +99,7 @@ fn main() {
             Severity::Warning => "[WARNING] ",
             Severity::Info => "[INFO]    ",
         };
-        println!("{tag} {anomaly:?}");
+        println!("{tag} {anomaly}");
     }
 
     process::exit(1);
