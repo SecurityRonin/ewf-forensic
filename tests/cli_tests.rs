@@ -207,3 +207,109 @@ fn cli_json_min_severity_filters_anomalies() {
     // anomaly_count should be 0
     assert!(stdout.contains("\"anomaly_count\": 0") || stdout.contains("\"anomaly_count\":0"), "{stdout}");
 }
+
+// ── --print-hashes: outputs MD5, SHA-1, SHA-256 ──────────────────────────────
+
+#[test]
+fn cli_print_hashes_outputs_three_hashes() {
+    let data = E01Builder::new(512 * 64).build();
+    let f = write_temp(&data, ".E01");
+    let out = ewf_check()
+        .arg("--print-hashes")
+        .arg(f.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("MD5") || stdout.contains("md5"),
+        "--print-hashes must output MD5; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("SHA-1") || stdout.contains("sha1") || stdout.contains("SHA1"),
+        "--print-hashes must output SHA-1; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("SHA-256") || stdout.contains("sha256") || stdout.contains("SHA256"),
+        "--print-hashes must output SHA-256; got: {stdout}"
+    );
+}
+
+#[test]
+fn cli_print_hashes_exits_zero_on_clean_image() {
+    let data = E01Builder::new(512 * 64).build();
+    let f = write_temp(&data, ".E01");
+    let out = ewf_check()
+        .arg("--print-hashes")
+        .arg(f.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "--print-hashes on clean image must exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn cli_print_hashes_exits_one_with_anomalies() {
+    let data = E01Builder::new(512 * 64).with_md5([0xBAu8; 16]).build();
+    let f = write_temp(&data, ".E01");
+    let out = ewf_check()
+        .arg("--print-hashes")
+        .arg(f.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "--print-hashes with anomalies must exit 1; stdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+#[test]
+fn cli_print_hashes_values_are_hex() {
+    let data = E01Builder::new(512 * 64).build();
+    let f = write_temp(&data, ".E01");
+    let out = ewf_check()
+        .arg("--print-hashes")
+        .arg(f.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // Each hash line must contain a valid lowercase hex string (32, 40, or 64 chars)
+    let has_md5_hex = stdout.lines().any(|l| {
+        l.to_lowercase().contains("md5") && l.chars().any(|c| c.is_ascii_hexdigit())
+    });
+    assert!(has_md5_hex, "--print-hashes output must contain hex MD5; got: {stdout}");
+}
+
+#[test]
+fn cli_print_hashes_json_includes_hashes() {
+    let data = E01Builder::new(512 * 64).build();
+    let f = write_temp(&data, ".E01");
+    let out = ewf_check()
+        .arg("--json")
+        .arg("--print-hashes")
+        .arg(f.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"hashes\""),
+        "--json --print-hashes must include hashes field; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"md5\""),
+        "--json --print-hashes must include md5; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"sha1\""),
+        "--json --print-hashes must include sha1; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"sha256\""),
+        "--json --print-hashes must include sha256; got: {stdout}"
+    );
+}
