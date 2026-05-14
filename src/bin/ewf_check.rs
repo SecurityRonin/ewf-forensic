@@ -16,6 +16,7 @@ ARGUMENTS
 OPTIONS
     --min-severity=<level>    Only report anomalies at or above this severity.
                               Levels: info, warning, error, critical [default: info]
+    --json                    Emit machine-readable JSON instead of human text.
     --help                    Show this help and exit.
 
 EXIT CODES
@@ -38,6 +39,7 @@ fn main() {
     }
 
     let mut min_severity = Severity::Info;
+    let mut json_mode = false;
     let mut paths: Vec<PathBuf> = Vec::new();
 
     for arg in &args {
@@ -52,6 +54,8 @@ fn main() {
                     process::exit(2);
                 }
             };
+        } else if arg == "--json" {
+            json_mode = true;
         } else if arg.starts_with('-') {
             eprintln!("error: unknown option '{arg}'");
             eprintln!("Run 'ewf-check --help' for usage.");
@@ -76,7 +80,11 @@ fn main() {
     let findings = match checker.analyse() {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("error: {e}");
+            if json_mode {
+                println!("{{\"error\": \"{}\"}}", json_escape(&e.to_string()));
+            } else {
+                eprintln!("error: {e}");
+            }
             process::exit(2);
         }
     };
@@ -86,13 +94,22 @@ fn main() {
         .filter(|a| severity_gte(a.severity(), &min_severity))
         .collect();
 
-    if visible.is_empty() {
-        println!("clean — 0 anomalies at or above {}", severity_label(&min_severity));
-        process::exit(0);
+    if json_mode {
+        print_json(&visible, &min_severity);
+    } else {
+        print_text(&visible, &min_severity);
     }
 
+    process::exit(if visible.is_empty() { 0 } else { 1 });
+}
+
+fn print_text(visible: &[&EwfIntegrityAnomaly], min_severity: &Severity) {
+    if visible.is_empty() {
+        println!("clean — 0 anomalies at or above {}", severity_label(min_severity));
+        return;
+    }
     println!("{} anomaly/anomalies found:\n", visible.len());
-    for anomaly in &visible {
+    for anomaly in visible {
         let tag = match anomaly.severity() {
             Severity::Critical => "[CRITICAL]",
             Severity::Error => "[ERROR]   ",
@@ -101,8 +118,85 @@ fn main() {
         };
         println!("{tag} {anomaly}");
     }
+}
 
-    process::exit(1);
+fn print_json(visible: &[&EwfIntegrityAnomaly], _min_severity: &Severity) {
+    let clean = visible.is_empty();
+    let count = visible.len();
+    let mut out = format!(
+        "{{\n  \"clean\": {},\n  \"anomaly_count\": {},\n  \"anomalies\": [",
+        clean, count
+    );
+    for (i, anomaly) in visible.iter().enumerate() {
+        let sep = if i == 0 { "\n" } else { ",\n" };
+        out.push_str(&format!(
+            "{}    {{\"severity\": \"{}\", \"kind\": \"{}\", \"message\": \"{}\"}}",
+            sep,
+            severity_label(&anomaly.severity()),
+            anomaly_kind(anomaly),
+            json_escape(&anomaly.to_string()),
+        ));
+    }
+    if !visible.is_empty() {
+        out.push_str("\n  ");
+    }
+    out.push_str("]\n}");
+    println!("{out}");
+}
+
+fn anomaly_kind(a: &EwfIntegrityAnomaly) -> &'static str {
+    match a {
+        EwfIntegrityAnomaly::InvalidSignature => "InvalidSignature",
+        EwfIntegrityAnomaly::SegmentNumberZero => "SegmentNumberZero",
+        EwfIntegrityAnomaly::SectionDescriptorCrcMismatch { .. } => "SectionDescriptorCrcMismatch",
+        EwfIntegrityAnomaly::SectionChainBroken { .. } => "SectionChainBroken",
+        EwfIntegrityAnomaly::SectionGapNonZero { .. } => "SectionGapNonZero",
+        EwfIntegrityAnomaly::VolumeSectionMissing => "VolumeSectionMissing",
+        EwfIntegrityAnomaly::UnknownSectionType { .. } => "UnknownSectionType",
+        EwfIntegrityAnomaly::DoneSectionMissing => "DoneSectionMissing",
+        EwfIntegrityAnomaly::ChunkSizeInvalid { .. } => "ChunkSizeInvalid",
+        EwfIntegrityAnomaly::SectorCountMismatch { .. } => "SectorCountMismatch",
+        EwfIntegrityAnomaly::BytesPerSectorInvalid { .. } => "BytesPerSectorInvalid",
+        EwfIntegrityAnomaly::TableChunkCountMismatch { .. } => "TableChunkCountMismatch",
+        EwfIntegrityAnomaly::TableEntryOutOfBounds { .. } => "TableEntryOutOfBounds",
+        EwfIntegrityAnomaly::TableEntryOutsideSectorsRange { .. } => "TableEntryOutsideSectorsRange",
+        EwfIntegrityAnomaly::SectionGapZero { .. } => "SectionGapZero",
+        EwfIntegrityAnomaly::HashMismatch { .. } => "HashMismatch",
+        EwfIntegrityAnomaly::HashSectionMissing => "HashSectionMissing",
+        EwfIntegrityAnomaly::SegmentOutOfOrder { .. } => "SegmentOutOfOrder",
+        EwfIntegrityAnomaly::DigestSha1Mismatch { .. } => "DigestSha1Mismatch",
+        EwfIntegrityAnomaly::ExternalMd5Mismatch { .. } => "ExternalMd5Mismatch",
+        EwfIntegrityAnomaly::ExternalSha1Mismatch { .. } => "ExternalSha1Mismatch",
+        EwfIntegrityAnomaly::ExternalSha256Mismatch { .. } => "ExternalSha256Mismatch",
+        EwfIntegrityAnomaly::Ewf2SectionDataHashMismatch { .. } => "Ewf2SectionDataHashMismatch",
+        EwfIntegrityAnomaly::Ewf2EncryptedSection { .. } => "Ewf2EncryptedSection",
+        EwfIntegrityAnomaly::Ewf2HashSectionMissing => "Ewf2HashSectionMissing",
+        EwfIntegrityAnomaly::VolumeBodyCrcMismatch { .. } => "VolumeBodyCrcMismatch",
+        EwfIntegrityAnomaly::MediaTypeUnknown { .. } => "MediaTypeUnknown",
+        EwfIntegrityAnomaly::SetIdentifierMismatch { .. } => "SetIdentifierMismatch",
+        EwfIntegrityAnomaly::Ewf2MediaInfoMissing => "Ewf2MediaInfoMissing",
+        EwfIntegrityAnomaly::Ewf2BytesPerSectorInvalid { .. } => "Ewf2BytesPerSectorInvalid",
+        EwfIntegrityAnomaly::Ewf2ChunkSizeInvalid { .. } => "Ewf2ChunkSizeInvalid",
+        EwfIntegrityAnomaly::Ewf2SectorCountZero => "Ewf2SectorCountZero",
+        EwfIntegrityAnomaly::ChunkChecksumMismatch { .. } => "ChunkChecksumMismatch",
+        EwfIntegrityAnomaly::ChunkDecompressionError { .. } => "ChunkDecompressionError",
+    }
+}
+
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 fn severity_gte(a: Severity, min: &Severity) -> bool {
