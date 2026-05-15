@@ -1,14 +1,11 @@
-//! RED phase — real EWF v2 fixture created by libewf's ewfacquirestream.
+//! Real EWF v2 fixture tests — zeros_128s.Ex01 created by libewf ewfacquirestream.
 //!
 //! Fixture: tests/fixtures/zeros_128s.Ex01
 //!   Created with: dd if=/dev/zero bs=512 count=128 | ewfacquirestream -f encase7-v2 -d sha1 -d sha256 -t /tmp/test_ex01
 //!   ewfverify reports: MD5=fcd6bcb56c1689fcef28b57c22475bad, SHA256=de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31
 //!   ewfverify exits: SUCCESS
-//!
-//! These tests fail until the EWF v2 section traversal is fixed to walk backward
-//! from the DONE descriptor (file_end - 64) via prev_section_offset.
 
-use ewf_forensic::{EwfIntegrityAnomaly, EwfIntegrityPath, Severity};
+use ewf_forensic::{ComputedHashes, EwfIntegrityAnomaly, EwfIntegrityPath, Severity};
 use std::path::PathBuf;
 
 fn fixture_path() -> PathBuf {
@@ -78,10 +75,10 @@ fn real_ex01_no_warning_or_error_anomalies() {
     );
 }
 
-// ── Clean real Ex01: exactly Ewf2SectorDataNotVerified (the honest disclosure) ─
+// ── Fully-verified real Ex01: zero anomalies ─────────────────────────────────
 
 #[test]
-fn real_ex01_exactly_sector_data_not_verified_info() {
+fn real_ex01_zero_anomalies() {
     let path = fixture_path();
     if !path.exists() {
         eprintln!("skipping: fixture not found at {}", path.display());
@@ -91,19 +88,73 @@ fn real_ex01_exactly_sector_data_not_verified_info() {
         .analyse()
         .expect("analyse must succeed");
     assert!(
-        findings
-            .iter()
-            .any(|a| matches!(a, EwfIntegrityAnomaly::Ewf2SectorDataNotVerified)),
-        "must disclose that EWF v2 sector data is not verified; anomalies: {findings:#?}"
+        findings.is_empty(),
+        "fully-verified clean Ex01 must produce zero anomalies; got: {findings:#?}"
     );
-    // All anomalies must be Info
-    for a in &findings {
-        assert_eq!(
-            a.severity(),
-            Severity::Info,
-            "unexpected non-Info anomaly: {a}"
-        );
+}
+
+// ── compute_hashes() works for EWF v2 ────────────────────────────────────────
+
+#[test]
+fn real_ex01_compute_hashes_returns_some() {
+    let path = fixture_path();
+    if !path.exists() {
+        eprintln!("skipping: fixture not found at {}", path.display());
+        return;
     }
+    let result: Option<ComputedHashes> = EwfIntegrityPath::from_path(&path)
+        .compute_hashes()
+        .expect("compute_hashes must not fail");
+    assert!(
+        result.is_some(),
+        "compute_hashes() must return Some for a valid Ex01; got None"
+    );
+}
+
+#[test]
+fn real_ex01_compute_hashes_md5_correct() {
+    let path = fixture_path();
+    if !path.exists() {
+        eprintln!("skipping: fixture not found at {}", path.display());
+        return;
+    }
+    let hashes = EwfIntegrityPath::from_path(&path)
+        .compute_hashes()
+        .expect("must not fail")
+        .expect("must return Some");
+    let expected_md5: [u8; 16] =
+        hex_to_bytes("fcd6bcb56c1689fcef28b57c22475bad");
+    assert_eq!(
+        hashes.md5, expected_md5,
+        "MD5 must match ewfverify-confirmed value"
+    );
+}
+
+#[test]
+fn real_ex01_compute_hashes_sha256_correct() {
+    let path = fixture_path();
+    if !path.exists() {
+        eprintln!("skipping: fixture not found at {}", path.display());
+        return;
+    }
+    let hashes = EwfIntegrityPath::from_path(&path)
+        .compute_hashes()
+        .expect("must not fail")
+        .expect("must return Some");
+    let expected_sha256: [u8; 32] =
+        hex_to_bytes("de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31");
+    assert_eq!(
+        hashes.sha256, expected_sha256,
+        "SHA-256 must match ewfverify-confirmed value"
+    );
+}
+
+fn hex_to_bytes<const N: usize>(s: &str) -> [u8; N] {
+    let mut out = [0u8; N];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap();
+    }
+    out
 }
 
 // ── ewf-check exits 0 for clean real Ex01 (INFO only, no exit 1) ─────────────
