@@ -33,9 +33,14 @@ const LEF2_SIGNATURE: [u8; 8] = [0x4c, 0x45, 0x46, 0x32, 0x0d, 0x0a, 0x81, 0x00]
 const EVF2_FILE_HEADER_SIZE: usize = 32;
 const EVF2_SECTION_DESCRIPTOR_SIZE: usize = 64;
 const EVF2_DATA_FLAG_ENCRYPTED: u32 = 0x0000_0002;
+const EVF2_CHUNK_FLAG_COMPRESSED: u32 = 0x0000_0001;
 const EVF2_TYPE_MEDIA_INFO: u32 = 0x02;
+const EVF2_TYPE_SECTOR_DATA: u32 = 0x03;
+const EVF2_TYPE_CHUNK_TABLE: u32 = 0x04;
 const EVF2_TYPE_MD5_HASH: u32 = 0x08;
 const EVF2_TYPE_SHA1_HASH: u32 = 0x09;
+const EVF2_CHUNK_TABLE_HEADER_SIZE: usize = 32;
+const EVF2_CHUNK_TABLE_ENTRY_SIZE: usize = 16;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -178,11 +183,6 @@ pub enum EwfIntegrityAnomaly {
         computed: [u8; 32],
         expected: [u8; 32],
     },
-    /// EWF v2 sector data (chunk content) was not verified at the chunk level.
-    /// Section-descriptor integrity hashes and media metadata were checked, but
-    /// decompression and per-sector hashing of chunk data is not yet implemented.
-    /// Callers should treat this image as partially verified.
-    Ewf2SectorDataNotVerified,
 }
 
 impl EwfIntegrityAnomaly {
@@ -222,7 +222,6 @@ impl EwfIntegrityAnomaly {
             Self::ChunkChecksumMismatch { .. } => Severity::Error,
             Self::ChunkDecompressionError { .. } => Severity::Error,
             Self::ExternalSha256Mismatch { .. } => Severity::Critical,
-            Self::Ewf2SectorDataNotVerified => Severity::Info,
         }
     }
 }
@@ -298,8 +297,6 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "chunk {chunk_index}: Adler-32 mismatch (computed 0x{computed:08x}, stored 0x{stored:08x})"),
             Self::ChunkDecompressionError { chunk_index } =>
                 write!(f, "chunk {chunk_index}: zlib decompression failed — chunk data is corrupt"),
-            Self::Ewf2SectorDataNotVerified =>
-                write!(f, "EWF v2: sector data not verified — chunk-level integrity check not yet implemented; image is only partially verified"),
         }
     }
 }
@@ -370,13 +367,13 @@ impl<'a> EwfIntegrity<'a> {
     /// Compute MD5, SHA-1, and SHA-256 of all sector data without verifying stored hashes.
     ///
     /// Returns `None` if the image is unparseable (too short, invalid signature,
-    /// missing geometry) or is EWF v2 (sector data not yet extractable).
+    /// missing geometry, or no chunk table found in an EWF v2 image).
     pub fn compute_hashes(&self) -> Option<ComputedHashes> {
         let first = self.segments.first().copied().unwrap_or(&[]);
         if first.len() >= 8
             && (first[0..8] == EVF2_SIGNATURE || first[0..8] == LEF2_SIGNATURE)
         {
-            return None;
+            return compute_hashes_ewf2(&self.segments);
         }
         compute_hashes_ewf1(&self.segments)
     }
@@ -508,8 +505,6 @@ impl<'a> EwfIntegrity<'a> {
 
     fn analyse_all_ewf2(&self) -> Vec<EwfIntegrityAnomaly> {
         let mut issues = Vec::new();
-        // Sector data (chunk content) is not yet verified at the chunk level.
-        issues.push(EwfIntegrityAnomaly::Ewf2SectorDataNotVerified);
         let n = self.segments.len();
 
         for (idx, &data) in self.segments.iter().enumerate() {
@@ -541,6 +536,8 @@ impl<'a> EwfIntegrity<'a> {
             // is the last 64 bytes of the segment. Walk backward via prev_section_offset.
             let mut has_hash = false;
             let mut has_media_info = false;
+            let mut chunk_table_body: Option<(usize, usize)> = None;
+            let mut stored_sector_md5: Option<[u8; 16]> = None;
             let mut desc_offset = data.len().saturating_sub(EVF2_SECTION_DESCRIPTOR_SIZE);
 
             loop {
@@ -579,13 +576,25 @@ impl<'a> EwfIntegrity<'a> {
                         }
                     }
 
-                    if section_type == EVF2_TYPE_MEDIA_INFO {
-                        has_media_info = true;
+                    match section_type {
+                        EVF2_TYPE_MEDIA_INFO => has_media_info = true,
+                        EVF2_TYPE_CHUNK_TABLE => {
+                            chunk_table_body = Some((body_start, body_end));
+                        }
+                        EVF2_TYPE_MD5_HASH => {
+                            has_hash = true;
+                            // Body[0..16] = MD5 of all sector data
+                            if data_size >= 16 {
+                                if let Some(body) = data.get(body_start..body_end) {
+                                    let mut h = [0u8; 16];
+                                    h.copy_from_slice(&body[..16]);
+                                    stored_sector_md5 = Some(h);
+                                }
+                            }
+                        }
+                        EVF2_TYPE_SHA1_HASH => has_hash = true,
+                        _ => {}
                     }
-                }
-
-                if section_type == EVF2_TYPE_MD5_HASH || section_type == EVF2_TYPE_SHA1_HASH {
-                    has_hash = true;
                 }
 
                 if prev_offset == 0 {
@@ -599,6 +608,12 @@ impl<'a> EwfIntegrity<'a> {
             }
             if idx == 0 && !has_media_info {
                 issues.push(EwfIntegrityAnomaly::Ewf2MediaInfoMissing);
+            }
+
+            // Sector data verification: parse chunk table, verify per-chunk Adler-32
+            // and compute MD5 of all sector data for comparison with stored value.
+            if let Some((ct_start, ct_end)) = chunk_table_body {
+                verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, &mut issues);
             }
         }
 
@@ -1036,6 +1051,195 @@ fn check_hash_all_segments(
             });
         }
     }
+}
+
+/// Verify EWF v2 chunk data integrity and compare overall MD5 against stored value.
+///
+/// Chunk table entry layout (16 bytes each, starting at body offset 32):
+///   [0..4]:   file_offset (u32 LE) — absolute position of chunk data in the file
+///   [4..8]:   padding (u32, zero)
+///   [8..12]:  data_size (u32 LE) — raw_sector_bytes + 4 (Adler-32 trailer)
+///   [12..16]: flags (u32 LE) — bit 0: compressed (zlib); other bits: reserved
+///
+/// On-disk chunk layout: [sector_data: raw_size bytes][adler32: 4 bytes][alignment pad]
+fn verify_ewf2_sector_data(
+    data: &[u8],
+    ct_start: usize,
+    ct_end: usize,
+    stored_md5: Option<[u8; 16]>,
+    issues: &mut Vec<EwfIntegrityAnomaly>,
+) {
+    let tbl = match data.get(ct_start..ct_end) {
+        Some(t) => t,
+        None => return,
+    };
+    if tbl.len() < EVF2_CHUNK_TABLE_HEADER_SIZE + EVF2_CHUNK_TABLE_ENTRY_SIZE {
+        return;
+    }
+    let chunk_count = u64::from_le_bytes(tbl[8..16].try_into().unwrap()) as usize;
+
+    let mut md5_h   = Md5::new();
+    let mut sha1_h  = Sha1::new();
+    let mut sha256_h = Sha256::new();
+
+    for i in 0..chunk_count {
+        let entry_off = EVF2_CHUNK_TABLE_HEADER_SIZE + i * EVF2_CHUNK_TABLE_ENTRY_SIZE;
+        if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() {
+            break;
+        }
+        let file_offset = u32::from_le_bytes(tbl[entry_off..entry_off + 4].try_into().unwrap()) as usize;
+        let chunk_data_size = u32::from_le_bytes(tbl[entry_off + 8..entry_off + 12].try_into().unwrap()) as usize;
+        let flags = u32::from_le_bytes(tbl[entry_off + 12..entry_off + 16].try_into().unwrap());
+
+        // data_size includes a 4-byte Adler-32 trailer; raw sector data precedes it.
+        let raw_size = chunk_data_size.saturating_sub(4);
+        let chunk_raw = match data.get(file_offset..file_offset + raw_size) {
+            Some(r) => r,
+            None => break,
+        };
+
+        // Per-chunk Adler-32
+        if chunk_data_size >= 4 {
+            if let Some(crc_bytes) = data.get(file_offset + raw_size..file_offset + raw_size + 4) {
+                let stored_crc = u32::from_le_bytes(crc_bytes.try_into().unwrap());
+                let computed_crc = adler32(chunk_raw);
+                if computed_crc != stored_crc {
+                    issues.push(EwfIntegrityAnomaly::ChunkChecksumMismatch {
+                        chunk_index: i,
+                        computed: computed_crc,
+                        stored: stored_crc,
+                    });
+                }
+            }
+        }
+
+        if flags & EVF2_CHUNK_FLAG_COMPRESSED != 0 {
+            // Zlib-compressed chunk: decompress before hashing.
+            let mut decompressed = Vec::with_capacity(raw_size);
+            if ZlibDecoder::new(chunk_raw)
+                .read_to_end(&mut decompressed)
+                .is_err()
+            {
+                issues.push(EwfIntegrityAnomaly::ChunkDecompressionError { chunk_index: i });
+                continue;
+            }
+            md5_h.update(&decompressed);
+            sha1_h.update(&decompressed);
+            sha256_h.update(&decompressed);
+        } else {
+            md5_h.update(chunk_raw);
+            sha1_h.update(chunk_raw);
+            sha256_h.update(chunk_raw);
+        }
+    }
+
+    let computed_md5: [u8; 16] = md5_h.finalize().into();
+
+    if let Some(stored) = stored_md5 {
+        if computed_md5 != stored {
+            issues.push(EwfIntegrityAnomaly::HashMismatch { computed: computed_md5, stored });
+        }
+    }
+
+    // External reference hashes are handled at EwfIntegrity level via analyse(),
+    // not here. compute_hashes_ewf2() provides the values for that path.
+    drop(sha1_h);
+    drop(sha256_h);
+}
+
+/// Extract sector-data hashes from EWF v2 segments without full anomaly checking.
+fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
+    let mut md5_h   = Md5::new();
+    let mut sha1_h  = Sha1::new();
+    let mut sha256_h = Sha256::new();
+    let mut found_chunks = false;
+
+    for &data in segments {
+        if data.len() < EVF2_FILE_HEADER_SIZE + EVF2_SECTION_DESCRIPTOR_SIZE {
+            continue;
+        }
+
+        // Walk backward to find the chunk table section.
+        let mut desc_offset = data.len().saturating_sub(EVF2_SECTION_DESCRIPTOR_SIZE);
+        let mut chunk_table_body: Option<(usize, usize)> = None;
+
+        loop {
+            if desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE > data.len()
+                || desc_offset < EVF2_FILE_HEADER_SIZE
+            {
+                break;
+            }
+            let desc = &data[desc_offset..desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE];
+            let section_type = u32::from_le_bytes(desc[0..4].try_into().unwrap());
+            let data_flags   = u32::from_le_bytes(desc[4..8].try_into().unwrap());
+            let prev_offset  = u64::from_le_bytes(desc[8..16].try_into().unwrap()) as usize;
+            let data_size    = u64::from_le_bytes(desc[16..24].try_into().unwrap()) as usize;
+            let body_end   = desc_offset;
+            let body_start = desc_offset.saturating_sub(data_size);
+
+            if data_flags & EVF2_DATA_FLAG_ENCRYPTED == 0
+                && section_type == EVF2_TYPE_CHUNK_TABLE
+            {
+                chunk_table_body = Some((body_start, body_end));
+            }
+
+            if prev_offset == 0 { break; }
+            desc_offset = prev_offset;
+        }
+
+        let (ct_start, ct_end) = match chunk_table_body {
+            Some(b) => b,
+            None => continue,
+        };
+        let tbl = match data.get(ct_start..ct_end) {
+            Some(t) => t,
+            None => continue,
+        };
+        if tbl.len() < EVF2_CHUNK_TABLE_HEADER_SIZE + EVF2_CHUNK_TABLE_ENTRY_SIZE {
+            continue;
+        }
+        let chunk_count = u64::from_le_bytes(tbl[8..16].try_into().unwrap()) as usize;
+
+        for i in 0..chunk_count {
+            let entry_off = EVF2_CHUNK_TABLE_HEADER_SIZE + i * EVF2_CHUNK_TABLE_ENTRY_SIZE;
+            if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() { break; }
+            let file_offset = u32::from_le_bytes(tbl[entry_off..entry_off + 4].try_into().unwrap()) as usize;
+            let chunk_data_size = u32::from_le_bytes(tbl[entry_off + 8..entry_off + 12].try_into().unwrap()) as usize;
+            let flags = u32::from_le_bytes(tbl[entry_off + 12..entry_off + 16].try_into().unwrap());
+            let raw_size = chunk_data_size.saturating_sub(4);
+            let chunk_raw = match data.get(file_offset..file_offset + raw_size) {
+                Some(r) => r,
+                None => break,
+            };
+
+            if flags & EVF2_CHUNK_FLAG_COMPRESSED != 0 {
+                let mut decompressed = Vec::with_capacity(raw_size);
+                if ZlibDecoder::new(chunk_raw)
+                    .read_to_end(&mut decompressed)
+                    .is_err()
+                {
+                    continue;
+                }
+                md5_h.update(&decompressed);
+                sha1_h.update(&decompressed);
+                sha256_h.update(&decompressed);
+            } else {
+                md5_h.update(chunk_raw);
+                sha1_h.update(chunk_raw);
+                sha256_h.update(chunk_raw);
+            }
+            found_chunks = true;
+        }
+    }
+
+    if !found_chunks {
+        return None;
+    }
+    Some(ComputedHashes {
+        md5:    md5_h.finalize().into(),
+        sha1:   sha1_h.finalize().into(),
+        sha256: sha256_h.finalize().into(),
+    })
 }
 
 /// Hash all sector data from EWF v1 segments without running anomaly checks.

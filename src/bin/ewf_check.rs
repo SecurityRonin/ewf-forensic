@@ -234,7 +234,6 @@ fn anomaly_kind(a: &EwfIntegrityAnomaly) -> &'static str {
         EwfIntegrityAnomaly::Ewf2SectorCountZero => "Ewf2SectorCountZero",
         EwfIntegrityAnomaly::ChunkChecksumMismatch { .. } => "ChunkChecksumMismatch",
         EwfIntegrityAnomaly::ChunkDecompressionError { .. } => "ChunkDecompressionError",
-        EwfIntegrityAnomaly::Ewf2SectorDataNotVerified => "Ewf2SectorDataNotVerified",
     }
 }
 
