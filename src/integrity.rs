@@ -36,8 +36,6 @@ const EVF2_DATA_FLAG_ENCRYPTED: u32 = 0x0000_0002;
 const EVF2_TYPE_MEDIA_INFO: u32 = 0x02;
 const EVF2_TYPE_MD5_HASH: u32 = 0x08;
 const EVF2_TYPE_SHA1_HASH: u32 = 0x09;
-const EVF2_TYPE_DONE: u32 = 0x0F;
-const EVF2_TYPE_NEXT: u32 = 0x0D;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -511,15 +509,13 @@ impl<'a> EwfIntegrity<'a> {
     fn analyse_all_ewf2(&self) -> Vec<EwfIntegrityAnomaly> {
         let mut issues = Vec::new();
         // Sector data (chunk content) is not yet verified at the chunk level.
-        // Section-descriptor hashes and metadata are checked below, but actual
-        // decompression and per-sector hashing is unimplemented. Make this explicit.
         issues.push(EwfIntegrityAnomaly::Ewf2SectorDataNotVerified);
         let n = self.segments.len();
 
         for (idx, &data) in self.segments.iter().enumerate() {
             let expected_seg_num = (idx + 1) as u32;
 
-            if data.len() < EVF2_FILE_HEADER_SIZE {
+            if data.len() < EVF2_FILE_HEADER_SIZE + EVF2_SECTION_DESCRIPTOR_SIZE {
                 issues.push(EwfIntegrityAnomaly::SectionChainBroken {
                     at_offset: 0,
                     next_offset: 0,
@@ -541,27 +537,32 @@ impl<'a> EwfIntegrity<'a> {
                 });
             }
 
-            let mut pos = EVF2_FILE_HEADER_SIZE;
+            // EWF v2: section body precedes its descriptor; the DONE/NEXT descriptor
+            // is the last 64 bytes of the segment. Walk backward via prev_section_offset.
             let mut has_hash = false;
             let mut has_media_info = false;
+            let mut desc_offset = data.len().saturating_sub(EVF2_SECTION_DESCRIPTOR_SIZE);
 
             loop {
-                if pos + EVF2_SECTION_DESCRIPTOR_SIZE > data.len() {
+                if desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE > data.len()
+                    || desc_offset < EVF2_FILE_HEADER_SIZE
+                {
                     break;
                 }
-                let desc = &data[pos..pos + EVF2_SECTION_DESCRIPTOR_SIZE];
+                let desc = &data[desc_offset..desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE];
                 let section_type = u32::from_le_bytes(desc[0..4].try_into().unwrap());
-                let data_flags = u32::from_le_bytes(desc[4..8].try_into().unwrap());
-                let data_size = u64::from_le_bytes(desc[16..24].try_into().unwrap()) as usize;
-                let padding_size = u32::from_le_bytes(desc[28..32].try_into().unwrap()) as usize;
+                let data_flags  = u32::from_le_bytes(desc[4..8].try_into().unwrap());
+                let prev_offset = u64::from_le_bytes(desc[8..16].try_into().unwrap()) as usize;
+                let data_size   = u64::from_le_bytes(desc[16..24].try_into().unwrap()) as usize;
                 let stored_hash: [u8; 16] = desc[32..48].try_into().unwrap();
 
-                let body_start = pos + EVF2_SECTION_DESCRIPTOR_SIZE;
-                let body_end = body_start.saturating_add(data_size);
+                // Body occupies [desc_offset - data_size .. desc_offset].
+                let body_end   = desc_offset;
+                let body_start = desc_offset.saturating_sub(data_size);
 
                 if data_flags & EVF2_DATA_FLAG_ENCRYPTED != 0 {
                     issues.push(EwfIntegrityAnomaly::Ewf2EncryptedSection {
-                        offset: pos as u64,
+                        offset: desc_offset as u64,
                     });
                 } else {
                     if stored_hash != [0u8; 16] {
@@ -569,7 +570,7 @@ impl<'a> EwfIntegrity<'a> {
                             let computed: [u8; 16] = Md5::digest(body).into();
                             if computed != stored_hash {
                                 issues.push(EwfIntegrityAnomaly::Ewf2SectionDataHashMismatch {
-                                    offset: pos as u64,
+                                    offset: desc_offset as u64,
                                     section_type_id: section_type,
                                     computed,
                                     stored: stored_hash,
@@ -580,7 +581,6 @@ impl<'a> EwfIntegrity<'a> {
 
                     if section_type == EVF2_TYPE_MEDIA_INFO {
                         has_media_info = true;
-                        check_ewf2_media_info(data, body_start, body_end, &mut issues);
                     }
                 }
 
@@ -588,19 +588,10 @@ impl<'a> EwfIntegrity<'a> {
                     has_hash = true;
                 }
 
-                if section_type == EVF2_TYPE_DONE || section_type == EVF2_TYPE_NEXT {
+                if prev_offset == 0 {
                     break;
                 }
-
-                let next_pos = body_end.saturating_add(padding_size);
-                if next_pos <= pos {
-                    issues.push(EwfIntegrityAnomaly::SectionChainBroken {
-                        at_offset: pos as u64,
-                        next_offset: next_pos as u64,
-                    });
-                    break;
-                }
-                pos = next_pos;
+                desc_offset = prev_offset;
             }
 
             if idx == n - 1 && !has_hash {
@@ -616,37 +607,6 @@ impl<'a> EwfIntegrity<'a> {
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
-
-/// Parse and validate the EWF v2 media information section body.
-/// Body layout (20 bytes):
-///   [0..4]   bytes_per_sector (u32 LE)
-///   [4..8]   sectors_per_chunk (u32 LE)
-///   [8..16]  sector_count (u64 LE)
-///   [16..20] reserved
-fn check_ewf2_media_info(
-    data: &[u8],
-    body_start: usize,
-    body_end: usize,
-    issues: &mut Vec<EwfIntegrityAnomaly>,
-) {
-    let body = match data.get(body_start..body_end) {
-        Some(b) if b.len() >= 16 => b,
-        _ => return,
-    };
-    let bps = u32::from_le_bytes(body[0..4].try_into().unwrap());
-    let spc = u32::from_le_bytes(body[4..8].try_into().unwrap());
-    let sector_count = u64::from_le_bytes(body[8..16].try_into().unwrap());
-
-    if bps != 512 && bps != 4096 {
-        issues.push(EwfIntegrityAnomaly::Ewf2BytesPerSectorInvalid { bytes_per_sector: bps });
-    }
-    if spc == 0 || spc & (spc - 1) != 0 {
-        issues.push(EwfIntegrityAnomaly::Ewf2ChunkSizeInvalid { sectors_per_chunk: spc });
-    }
-    if sector_count == 0 {
-        issues.push(EwfIntegrityAnomaly::Ewf2SectorCountZero);
-    }
-}
 
 struct Section {
     type_name: String,

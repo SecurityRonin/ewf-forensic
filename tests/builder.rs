@@ -83,75 +83,93 @@ pub fn make_ewf2_file_header(segment_number: u32) -> Vec<u8> {
 }
 
 /// Build an EWF v2 section descriptor (64 bytes).
+///
+/// In real EWF v2, section bodies precede their descriptors; descriptors are
+/// linked backward via `prev_section_offset` (the byte offset of the previous
+/// section's descriptor within this segment).
 pub fn make_ewf2_descriptor(
     section_type: u32,
     data_flags: u32,
+    prev_section_offset: u64,
     data_size: u64,
     data_integrity_hash: [u8; 16],
 ) -> Vec<u8> {
     let mut d = vec![0u8; EVF2_SECTION_DESCRIPTOR_SIZE];
     d[0..4].copy_from_slice(&section_type.to_le_bytes());
     d[4..8].copy_from_slice(&data_flags.to_le_bytes());
-    // previous_offset at [8..16] = 0
+    d[8..16].copy_from_slice(&prev_section_offset.to_le_bytes());
     d[16..24].copy_from_slice(&data_size.to_le_bytes());
-    d[24..28].copy_from_slice(&(EVF2_SECTION_DESCRIPTOR_SIZE as u32).to_le_bytes()); // descriptor_size
-    // padding_size at [28..32] = 0
+    d[24..28].copy_from_slice(&(EVF2_SECTION_DESCRIPTOR_SIZE as u32).to_le_bytes());
     d[32..48].copy_from_slice(&data_integrity_hash);
-    // reserved [48..64] = zeros
     d
 }
 
 /// Minimal valid EWF v2 segment: file header + MD5 hash section + Done.
+///
+/// Real EWF v2 layout: body precedes descriptor; DONE is the last 64 bytes.
+/// Sections linked backward via prev_section_offset.
 pub fn make_ewf2_clean_segment() -> Vec<u8> {
+    // [header_32][md5_body_16][md5_desc_64][done_desc_64]
     let mut buf = Vec::new();
     buf.extend_from_slice(&make_ewf2_file_header(1));
-    // MD5 hash section (type=0x08): 16 bytes of zero data, zero data_integrity_hash (skip verify)
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_MD5_HASH, 0, 16, [0u8; 16]));
-    buf.extend_from_slice(&[0u8; 16]); // stored MD5 = zeros
-    // Done section
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_DONE, 0, 0, [0u8; 16]));
+    // MD5 body (16 bytes of zeros)
+    buf.extend_from_slice(&[0u8; 16]);                               // offset 32..48
+    let md5_desc_off = buf.len() as u64;                             // 48
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_MD5_HASH, 0, 0, 16, [0u8; 16],
+    ));                                                              // 48..112
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_DONE, 0, md5_desc_off, 0, [0u8; 16],
+    ));                                                              // 112..176
     buf
 }
 
 /// EWF v2 segment where the MD5 hash section has a wrong data_integrity_hash.
 pub fn make_ewf2_tampered_segment() -> Vec<u8> {
+    // [header_32][md5_body_16][md5_desc_64(bad_hash)][done_desc_64]
     let mut buf = Vec::new();
     buf.extend_from_slice(&make_ewf2_file_header(1));
-    // data_integrity_hash = [0xFF;16] but data is [0u8;16] → MD5([0u8;16]) != [0xFF;16]
+    buf.extend_from_slice(&[0u8; 16]);                               // md5 body: zeros
+    let md5_desc_off = buf.len() as u64;                             // 48
     buf.extend_from_slice(&make_ewf2_descriptor(
-        EVF2_SECTION_TYPE_MD5_HASH,
-        0,
-        16,
-        [0xFF; 16], // wrong hash
-    ));
-    buf.extend_from_slice(&[0u8; 16]);
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_DONE, 0, 0, [0u8; 16]));
+        EVF2_SECTION_TYPE_MD5_HASH, 0, 0, 16,
+        [0xFF; 16], // wrong stored hash → Ewf2SectionDataHashMismatch
+    ));                                                              // 48..112
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_DONE, 0, md5_desc_off, 0, [0u8; 16],
+    ));                                                              // 112..176
     buf
 }
 
 /// EWF v2 segment containing an encrypted sector-data section.
 pub fn make_ewf2_encrypted_segment() -> Vec<u8> {
+    // [header_32][enc_desc_64(empty_body)][md5_body_16][md5_desc_64][done_desc_64]
     let mut buf = Vec::new();
     buf.extend_from_slice(&make_ewf2_file_header(1));
-    // Encrypted SectorData section (type=0x03, flag=ENCRYPTED, zero data size)
+    // Encrypted section has no body (data_size=0); descriptor goes right after header.
+    let enc_desc_off = buf.len() as u64;                             // 32
     buf.extend_from_slice(&make_ewf2_descriptor(
-        EVF2_SECTION_TYPE_SECTOR_DATA,
-        EVF2_DATA_FLAG_ENCRYPTED,
-        0,
-        [0u8; 16],
-    ));
-    // MD5 hash section
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_MD5_HASH, 0, 16, [0u8; 16]));
-    buf.extend_from_slice(&[0u8; 16]);
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_DONE, 0, 0, [0u8; 16]));
+        EVF2_SECTION_TYPE_SECTOR_DATA, EVF2_DATA_FLAG_ENCRYPTED, 0, 0, [0u8; 16],
+    ));                                                              // 32..96
+    buf.extend_from_slice(&[0u8; 16]);                               // md5 body: 96..112
+    let md5_desc_off = buf.len() as u64;                             // 112
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_MD5_HASH, 0, enc_desc_off, 16, [0u8; 16],
+    ));                                                              // 112..176
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_DONE, 0, md5_desc_off, 0, [0u8; 16],
+    ));                                                              // 176..240
     buf
 }
 
 /// EWF v2 segment with no hash section → Ewf2HashSectionMissing.
 pub fn make_ewf2_no_hash_segment() -> Vec<u8> {
+    // [header_32][done_desc_64]
     let mut buf = Vec::new();
     buf.extend_from_slice(&make_ewf2_file_header(1));
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_DONE, 0, 0, [0u8; 16]));
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_DONE, 0, 0, 0, [0u8; 16],
+    ));
     buf
 }
 
@@ -178,26 +196,26 @@ pub fn make_ewf2_clean_segment_with_media_info(
     sector_count: u64,
 ) -> Vec<u8> {
     use md5::{Digest as _, Md5};
+    // [header_32][mi_body_20][mi_desc_64][md5_body_16][md5_desc_64][done_desc_64]
     let mut buf = Vec::new();
     buf.extend_from_slice(&make_ewf2_file_header(1));
 
-    // Media info section
-    let body = make_ewf2_media_info_body(bytes_per_sector, sectors_per_chunk, sector_count);
-    let hash: [u8; 16] = Md5::digest(&body).into();
+    let mi_body = make_ewf2_media_info_body(bytes_per_sector, sectors_per_chunk, sector_count);
+    let mi_hash: [u8; 16] = Md5::digest(&mi_body).into();
+    buf.extend_from_slice(&mi_body);                                 // 32..52
+    let mi_desc_off = buf.len() as u64;                              // 52
     buf.extend_from_slice(&make_ewf2_descriptor(
-        EVF2_SECTION_TYPE_MEDIA_INFO,
-        0,
-        body.len() as u64,
-        hash,
-    ));
-    buf.extend_from_slice(&body);
+        EVF2_SECTION_TYPE_MEDIA_INFO, 0, 0, mi_body.len() as u64, mi_hash,
+    ));                                                              // 52..116
 
-    // MD5 hash section
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_MD5_HASH, 0, 16, [0u8; 16]));
-    buf.extend_from_slice(&[0u8; 16]);
-
-    // Done section
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_DONE, 0, 0, [0u8; 16]));
+    buf.extend_from_slice(&[0u8; 16]);                               // md5 body: 116..132
+    let md5_desc_off = buf.len() as u64;                             // 132
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_MD5_HASH, 0, mi_desc_off, 16, [0u8; 16],
+    ));                                                              // 132..196
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_DONE, 0, md5_desc_off, 0, [0u8; 16],
+    ));                                                              // 196..260
     buf
 }
 
@@ -208,22 +226,26 @@ pub fn make_ewf2_segment_bad_geometry(
     sector_count: u64,
 ) -> Vec<u8> {
     use md5::{Digest as _, Md5};
+    // Same layout as make_ewf2_clean_segment_with_media_info but with bad values.
     let mut buf = Vec::new();
     buf.extend_from_slice(&make_ewf2_file_header(1));
 
-    let body = make_ewf2_media_info_body(bytes_per_sector, sectors_per_chunk, sector_count);
-    let hash: [u8; 16] = Md5::digest(&body).into();
+    let mi_body = make_ewf2_media_info_body(bytes_per_sector, sectors_per_chunk, sector_count);
+    let mi_hash: [u8; 16] = Md5::digest(&mi_body).into();
+    buf.extend_from_slice(&mi_body);
+    let mi_desc_off = buf.len() as u64;
     buf.extend_from_slice(&make_ewf2_descriptor(
-        EVF2_SECTION_TYPE_MEDIA_INFO,
-        0,
-        body.len() as u64,
-        hash,
+        EVF2_SECTION_TYPE_MEDIA_INFO, 0, 0, mi_body.len() as u64, mi_hash,
     ));
-    buf.extend_from_slice(&body);
 
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_MD5_HASH, 0, 16, [0u8; 16]));
     buf.extend_from_slice(&[0u8; 16]);
-    buf.extend_from_slice(&make_ewf2_descriptor(EVF2_SECTION_TYPE_DONE, 0, 0, [0u8; 16]));
+    let md5_desc_off = buf.len() as u64;
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_MD5_HASH, 0, mi_desc_off, 16, [0u8; 16],
+    ));
+    buf.extend_from_slice(&make_ewf2_descriptor(
+        EVF2_SECTION_TYPE_DONE, 0, md5_desc_off, 0, [0u8; 16],
+    ));
     buf
 }
 
