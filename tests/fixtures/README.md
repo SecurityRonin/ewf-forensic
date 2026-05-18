@@ -1,13 +1,46 @@
 # Test Fixtures
 
-Binary E01 fixtures from real acquisition tools. Not committed to git (too large;
-tool licences vary). Place files here and run ignored tests with:
+Binary EWF fixtures from real acquisition tools.
+
+Large or tool-licensed E01s are NOT committed — place them here and run ignored
+tests with:
 
 ```bash
 cargo test --test tool_fixtures_tests -- --ignored
 ```
 
-## Required files
+## Committed fixtures
+
+| File | Format | Size | Tool |
+|------|--------|------|------|
+| `zeros_128s.Ex01` | EWF v2 (EnCase 7) | 66 400 B | ewfacquirestream 20231119 |
+
+### zeros_128s.Ex01
+
+128 sectors × 512 bytes = 64 KB of zero-filled sector data.
+
+**Creation:**
+```bash
+dd if=/dev/zero bs=512 count=128 | \
+  ewfacquirestream -f encase7-v2 -d sha1 -d sha256 -t /tmp/test_ex01
+mv /tmp/test_ex01.Ex01 tests/fixtures/zeros_128s.Ex01
+```
+
+**ewfverify-confirmed hashes (libewf ground truth):**
+```
+MD5    : fcd6bcb56c1689fcef28b57c22475bad
+SHA-256: de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31
+Result : SUCCESS (ewfverify exits 0)
+```
+
+**ewfinfo geometry:** 128 sectors, 512 bytes/sector, 64 KB
+
+**ewf-forensic expected behavior:**
+- 1 INFO anomaly: `Ewf2SectorDataNotVerified` (honest partial-check disclosure)
+- 0 WARNING or ERROR anomalies
+- `ewf-check --min-severity=warning` exits 0
+
+## Required files (not committed)
 
 | File | Tool | How to generate |
 |------|------|-----------------|

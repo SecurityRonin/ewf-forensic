@@ -188,7 +188,7 @@ fn display_does_not_contain_struct_braces() {
         EwfIntegrityAnomaly::HashSectionMissing,
         EwfIntegrityAnomaly::Ewf2HashSectionMissing,
         EwfIntegrityAnomaly::Ewf2MediaInfoMissing,
-        EwfIntegrityAnomaly::Ewf2SectorCountZero,
+        EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch { computed: 0x1234, stored: 0x5678 },
         EwfIntegrityAnomaly::SegmentNumberZero,
     ];
     for a in &anomalies {

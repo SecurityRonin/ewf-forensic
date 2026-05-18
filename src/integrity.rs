@@ -160,12 +160,9 @@ pub enum EwfIntegrityAnomaly {
     SetIdentifierMismatch { segment: usize },
     /// No media information (device information) section found in the EWF v2 image.
     Ewf2MediaInfoMissing,
-    /// bytes_per_sector in the EWF v2 media info section is not 512 or 4096.
-    Ewf2BytesPerSectorInvalid { bytes_per_sector: u32 },
-    /// sectors_per_chunk in the EWF v2 media info section is zero or not a power of two.
-    Ewf2ChunkSizeInvalid { sectors_per_chunk: u32 },
-    /// sector_count in the EWF v2 media info section is zero.
-    Ewf2SectorCountZero,
+    /// The Adler-32 checksum stored at the end of the EWF v2 chunk table body does not
+    /// match the Adler-32 computed over the chunk table entries.
+    Ewf2ChunkTableChecksumMismatch { computed: u32, stored: u32 },
     /// The Adler-32 stored at the end of a chunk's byte range does not match
     /// the Adler-32 computed over the chunk's raw (possibly compressed) bytes.
     ChunkChecksumMismatch {
@@ -216,9 +213,7 @@ impl EwfIntegrityAnomaly {
             Self::Ewf2EncryptedSection { .. } => Severity::Warning,
             Self::Ewf2HashSectionMissing => Severity::Warning,
             Self::Ewf2MediaInfoMissing => Severity::Warning,
-            Self::Ewf2BytesPerSectorInvalid { .. } => Severity::Error,
-            Self::Ewf2ChunkSizeInvalid { .. } => Severity::Error,
-            Self::Ewf2SectorCountZero => Severity::Error,
+            Self::Ewf2ChunkTableChecksumMismatch { .. } => Severity::Error,
             Self::ChunkChecksumMismatch { .. } => Severity::Error,
             Self::ChunkDecompressionError { .. } => Severity::Error,
             Self::ExternalSha256Mismatch { .. } => Severity::Critical,
@@ -287,12 +282,8 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "set_identifier GUID mismatch in segment {segment} — segments may be from different acquisitions"),
             Self::Ewf2MediaInfoMissing =>
                 write!(f, "EWF v2 media information section missing"),
-            Self::Ewf2BytesPerSectorInvalid { bytes_per_sector } =>
-                write!(f, "EWF v2 invalid bytes_per_sector: {bytes_per_sector} (expected 512 or 4096)"),
-            Self::Ewf2ChunkSizeInvalid { sectors_per_chunk } =>
-                write!(f, "EWF v2 invalid sectors_per_chunk: {sectors_per_chunk} (expected non-zero power of two)"),
-            Self::Ewf2SectorCountZero =>
-                write!(f, "EWF v2 sector_count is zero"),
+            Self::Ewf2ChunkTableChecksumMismatch { computed, stored } =>
+                write!(f, "EWF v2 chunk table checksum mismatch (computed 0x{computed:08x}, stored 0x{stored:08x})"),
             Self::ChunkChecksumMismatch { chunk_index, computed, stored } =>
                 write!(f, "chunk {chunk_index}: Adler-32 mismatch (computed 0x{computed:08x}, stored 0x{stored:08x})"),
             Self::ChunkDecompressionError { chunk_index } =>

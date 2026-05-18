@@ -229,9 +229,7 @@ fn anomaly_kind(a: &EwfIntegrityAnomaly) -> &'static str {
         EwfIntegrityAnomaly::MediaTypeUnknown { .. } => "MediaTypeUnknown",
         EwfIntegrityAnomaly::SetIdentifierMismatch { .. } => "SetIdentifierMismatch",
         EwfIntegrityAnomaly::Ewf2MediaInfoMissing => "Ewf2MediaInfoMissing",
-        EwfIntegrityAnomaly::Ewf2BytesPerSectorInvalid { .. } => "Ewf2BytesPerSectorInvalid",
-        EwfIntegrityAnomaly::Ewf2ChunkSizeInvalid { .. } => "Ewf2ChunkSizeInvalid",
-        EwfIntegrityAnomaly::Ewf2SectorCountZero => "Ewf2SectorCountZero",
+        EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch { .. } => "Ewf2ChunkTableChecksumMismatch",
         EwfIntegrityAnomaly::ChunkChecksumMismatch { .. } => "ChunkChecksumMismatch",
         EwfIntegrityAnomaly::ChunkDecompressionError { .. } => "ChunkDecompressionError",
     }
