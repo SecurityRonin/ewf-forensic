@@ -35,7 +35,6 @@ const EVF2_SECTION_DESCRIPTOR_SIZE: usize = 64;
 const EVF2_DATA_FLAG_ENCRYPTED: u32 = 0x0000_0002;
 const EVF2_CHUNK_FLAG_COMPRESSED: u32 = 0x0000_0001;
 const EVF2_TYPE_MEDIA_INFO: u32 = 0x02;
-const EVF2_TYPE_SECTOR_DATA: u32 = 0x03;
 const EVF2_TYPE_CHUNK_TABLE: u32 = 0x04;
 const EVF2_TYPE_MD5_HASH: u32 = 0x08;
 const EVF2_TYPE_SHA1_HASH: u32 = 0x09;
@@ -604,7 +603,32 @@ impl<'a> EwfIntegrity<'a> {
             // Sector data verification: parse chunk table, verify per-chunk Adler-32
             // and compute MD5 of all sector data for comparison with stored value.
             if let Some((ct_start, ct_end)) = chunk_table_body {
-                verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, &mut issues);
+                if let Some(hashes) = verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, &mut issues) {
+                    if let Some(expected) = self.expected_md5 {
+                        if hashes.md5 != expected {
+                            issues.push(EwfIntegrityAnomaly::ExternalMd5Mismatch {
+                                computed: hashes.md5,
+                                expected,
+                            });
+                        }
+                    }
+                    if let Some(expected) = self.expected_sha1 {
+                        if hashes.sha1 != expected {
+                            issues.push(EwfIntegrityAnomaly::ExternalSha1Mismatch {
+                                computed: hashes.sha1,
+                                expected,
+                            });
+                        }
+                    }
+                    if let Some(expected) = self.expected_sha256 {
+                        if hashes.sha256 != expected {
+                            issues.push(EwfIntegrityAnomaly::ExternalSha256Mismatch {
+                                computed: hashes.sha256,
+                                expected,
+                            });
+                        }
+                    }
+                }
             }
         }
 
@@ -1059,15 +1083,28 @@ fn verify_ewf2_sector_data(
     ct_end: usize,
     stored_md5: Option<[u8; 16]>,
     issues: &mut Vec<EwfIntegrityAnomaly>,
-) {
+) -> Option<ComputedHashes> {
     let tbl = match data.get(ct_start..ct_end) {
         Some(t) => t,
-        None => return,
+        None => return None,
     };
     if tbl.len() < EVF2_CHUNK_TABLE_HEADER_SIZE + EVF2_CHUNK_TABLE_ENTRY_SIZE {
-        return;
+        return None;
     }
     let chunk_count = u64::from_le_bytes(tbl[8..16].try_into().unwrap()) as usize;
+
+    // Chunk table Adler-32: covers entries[0..chunk_count] immediately after the header.
+    let checksum_off = EVF2_CHUNK_TABLE_HEADER_SIZE + chunk_count * EVF2_CHUNK_TABLE_ENTRY_SIZE;
+    if checksum_off + 4 <= tbl.len() {
+        let computed_cs = adler32(&tbl[EVF2_CHUNK_TABLE_HEADER_SIZE..checksum_off]);
+        let stored_cs = u32::from_le_bytes(tbl[checksum_off..checksum_off + 4].try_into().unwrap());
+        if computed_cs != stored_cs {
+            issues.push(EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch {
+                computed: computed_cs,
+                stored: stored_cs,
+            });
+        }
+    }
 
     let mut md5_h   = Md5::new();
     let mut sha1_h  = Sha1::new();
@@ -1124,7 +1161,9 @@ fn verify_ewf2_sector_data(
         }
     }
 
-    let computed_md5: [u8; 16] = md5_h.finalize().into();
+    let computed_md5:    [u8; 16] = md5_h.finalize().into();
+    let computed_sha1:   [u8; 20] = sha1_h.finalize().into();
+    let computed_sha256: [u8; 32] = sha256_h.finalize().into();
 
     if let Some(stored) = stored_md5 {
         if computed_md5 != stored {
@@ -1132,10 +1171,7 @@ fn verify_ewf2_sector_data(
         }
     }
 
-    // External reference hashes are handled at EwfIntegrity level via analyse(),
-    // not here. compute_hashes_ewf2() provides the values for that path.
-    drop(sha1_h);
-    drop(sha256_h);
+    Some(ComputedHashes { md5: computed_md5, sha1: computed_sha1, sha256: computed_sha256 })
 }
 
 /// Extract sector-data hashes from EWF v2 segments without full anomaly checking.

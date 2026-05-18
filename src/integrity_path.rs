@@ -133,7 +133,7 @@ fn discover_segments(base: &Path) -> Vec<PathBuf> {
     };
 
     // Match E01 / e01 / Ex01 style (first segment is always *01)
-    let (prefix_char, digits) = match parse_ewf_extension(ext) {
+    let (prefix_char, has_x, digits) = match parse_ewf_extension(ext) {
         Some(v) => v,
         None => return vec![base.to_path_buf()],
     };
@@ -146,7 +146,7 @@ fn discover_segments(base: &Path) -> Vec<PathBuf> {
 
     let mut segments = Vec::new();
     for n in 1u32.. {
-        let ext_str = make_ewf_extension(prefix_char, digits, n);
+        let ext_str = make_ewf_extension(prefix_char, has_x, digits, n);
         let candidate = dir.join(format!("{stem}.{ext_str}"));
         if candidate.exists() {
             segments.push(candidate);
@@ -166,26 +166,27 @@ fn discover_segments(base: &Path) -> Vec<PathBuf> {
 }
 
 /// Parse an EWF extension like `E01`, `e01`, `Ex01`, `L01` into
-/// `(prefix_char, digit_count)`.
-fn parse_ewf_extension(ext: &str) -> Option<(char, usize)> {
+/// `(prefix_char, has_x, digit_count)`.
+fn parse_ewf_extension(ext: &str) -> Option<(char, bool, usize)> {
     let mut chars = ext.chars();
     let prefix = chars.next()?;
     if !prefix.is_ascii_alphabetic() {
         return None;
     }
-    // Skip optional 'x' for Ex01/Lx01
     let rest: String = chars.collect();
-    let rest = rest.trim_start_matches('x');
+    let has_x = rest.starts_with('x') || rest.starts_with('X');
+    let rest = rest.trim_start_matches(|c| c == 'x' || c == 'X');
     if rest.chars().all(|c| c.is_ascii_digit()) && !rest.is_empty() {
-        Some((prefix, rest.len()))
+        Some((prefix, has_x, rest.len()))
     } else {
         None
     }
 }
 
 /// Reconstruct an EWF extension for segment number `n` (1-based).
-/// `prefix_char` = 'E' or 'e', `digit_count` = 2 (for E01 style).
-fn make_ewf_extension(prefix: char, digit_count: usize, n: u32) -> String {
+/// `prefix_char` = 'E' or 'e', `has_x` = true for Ex01/Lx01 style.
+fn make_ewf_extension(prefix: char, has_x: bool, digit_count: usize, n: u32) -> String {
     let width = digit_count.max(2);
-    format!("{}{:0width$}", prefix, n, width = width)
+    let x = if has_x { "x" } else { "" };
+    format!("{}{}{:0width$}", prefix, x, n, width = width)
 }
