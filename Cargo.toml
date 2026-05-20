@@ -17,6 +17,10 @@ name = "ewf_forensic"
 name = "ewf-check"
 path = "src/bin/ewf_check.rs"
 
+[[test]]
+name = "serde_tests"
+required-features = ["serde"]
+
 [features]
 serde = ["dep:serde"]
 

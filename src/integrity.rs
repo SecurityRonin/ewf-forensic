@@ -44,6 +44,7 @@ const EVF2_CHUNK_TABLE_ENTRY_SIZE: usize = 16;
 // ── Public types ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Severity {
     Info,
     Warning,
@@ -52,6 +53,7 @@ pub enum Severity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EwfIntegrityAnomaly {
     // ── EWF v1 ───────────────────────────────────────────────────────────────
     InvalidSignature,
@@ -312,6 +314,7 @@ fn hex(bytes: &[u8]) -> String {
 /// Snapshot of analysis progress, delivered to the callback passed to
 /// [`EwfIntegrity::analyse_with_progress`] after each chunk is processed.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AnalysisProgress {
     /// Number of chunks fully processed (hashed + Adler-32 verified) so far.
     pub chunks_done: usize,
@@ -323,6 +326,7 @@ pub struct AnalysisProgress {
 
 /// The three hashes computed over all sector data in an EWF image.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ComputedHashes {
     pub md5: [u8; 16],
     pub sha1: [u8; 20],
