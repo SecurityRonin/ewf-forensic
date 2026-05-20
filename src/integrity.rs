@@ -524,6 +524,7 @@ impl<'a> EwfIntegrity<'a> {
                 self.expected_sha1,
                 self.expected_sha256,
                 &mut issues,
+                &mut |_| {},
             );
         }
 
@@ -533,6 +534,10 @@ impl<'a> EwfIntegrity<'a> {
     // ── EWF v2 ───────────────────────────────────────────────────────────────
 
     fn analyse_all_ewf2(&self) -> Vec<EwfIntegrityAnomaly> {
+        self.analyse_all_ewf2_with_progress(|_| {})
+    }
+
+    fn analyse_all_ewf2_impl(&self, progress: &mut dyn FnMut(AnalysisProgress)) -> Vec<EwfIntegrityAnomaly> {
         let mut issues = Vec::new();
         let n = self.segments.len();
 
@@ -651,7 +656,7 @@ impl<'a> EwfIntegrity<'a> {
             // Sector data verification: parse chunk table, verify per-chunk Adler-32
             // and compute MD5 of all sector data for comparison with stored value.
             if let Some((ct_start, ct_end)) = chunk_table_body {
-                if let Some(hashes) = verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, &mut issues) {
+                if let Some(hashes) = verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, &mut issues, progress) {
                     if let Some(expected) = self.expected_md5 {
                         if hashes.md5 != expected {
                             issues.push(EwfIntegrityAnomaly::ExternalMd5Mismatch {
@@ -685,18 +690,77 @@ impl<'a> EwfIntegrity<'a> {
 
     fn analyse_all_ewf1_with_progress(
         &self,
-        _progress: impl FnMut(AnalysisProgress),
+        mut progress: impl FnMut(AnalysisProgress),
     ) -> Vec<EwfIntegrityAnomaly> {
-        // Stub: no progress events yet.  GREEN will wire the callback.
-        self.analyse_all_ewf1()
+        let mut issues = Vec::new();
+        let n = self.segments.len();
+        let multi = n > 1;
+        let mut geometry: Option<VolumeGeometry> = None;
+        let mut all_sections: Vec<Vec<Section>> = Vec::with_capacity(n);
+
+        for (idx, &data) in self.segments.iter().enumerate() {
+            let expected_seg_num = (idx + 1) as u16;
+            let is_last = idx == n - 1;
+            let file_size = data.len() as u64;
+
+            if data.len() < FILE_HEADER_SIZE {
+                issues.push(EwfIntegrityAnomaly::SectionChainBroken { at_offset: 0, next_offset: 0 });
+                all_sections.push(Vec::new());
+                continue;
+            }
+            if data[0..8] != EVF_SIGNATURE && data[0..8] != DVF_SIGNATURE && data[0..8] != LVF_SIGNATURE {
+                issues.push(EwfIntegrityAnomaly::InvalidSignature);
+            }
+            let seg_num = u16::from_le_bytes(data[9..11].try_into().unwrap());
+            if seg_num == 0 {
+                issues.push(EwfIntegrityAnomaly::SegmentNumberZero);
+            } else if seg_num != expected_seg_num {
+                issues.push(EwfIntegrityAnomaly::SegmentOutOfOrder { segment_number: seg_num, expected: expected_seg_num });
+            }
+            let sections = walk_sections_v1(data, &mut issues);
+            if let Some(vol_sec) = sections.iter().find(|s| s.type_name == "volume" || s.type_name == "disk") {
+                if idx == 0 {
+                    geometry = check_volume_v1(data, vol_sec.offset, vol_sec.size, &mut issues);
+                } else {
+                    let later = check_volume_v1(data, vol_sec.offset, vol_sec.size, &mut issues);
+                    if let (Some(ref base), Some(ref later_geom)) = (&geometry, &later) {
+                        let base_guid = base.set_identifier;
+                        let later_guid = later_geom.set_identifier;
+                        if base_guid != [0u8; 16] && later_guid != [0u8; 16] && base_guid != later_guid {
+                            issues.push(EwfIntegrityAnomaly::SetIdentifierMismatch { segment: idx + 1 });
+                        }
+                    }
+                }
+            } else if idx == 0 {
+                issues.push(EwfIntegrityAnomaly::VolumeSectionMissing);
+            }
+            let vol_count = if !multi && idx == 0 { geometry.as_ref().map(|g| g.chunk_count) } else { None };
+            let sectors_range = sections.iter().find(|s| s.type_name == "sectors")
+                .map(|s| (s.offset + SECTION_DESCRIPTOR_SIZE as u64, s.offset + s.size));
+            if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
+                check_table_v1(data, table.offset, vol_count, file_size, sectors_range, &mut issues);
+            }
+            if is_last && !sections.iter().any(|s| s.type_name == "done") {
+                issues.push(EwfIntegrityAnomaly::DoneSectionMissing);
+            }
+            all_sections.push(sections);
+        }
+
+        if let Some(geom) = &geometry {
+            check_hash_all_segments(
+                &self.segments, &all_sections, geom,
+                self.expected_md5, self.expected_sha1, self.expected_sha256,
+                &mut issues, &mut progress,
+            );
+        }
+        issues
     }
 
     fn analyse_all_ewf2_with_progress(
         &self,
-        _progress: impl FnMut(AnalysisProgress),
+        mut progress: impl FnMut(AnalysisProgress),
     ) -> Vec<EwfIntegrityAnomaly> {
-        // Stub: no progress events yet.  GREEN will wire the callback.
-        self.analyse_all_ewf2()
+        self.analyse_all_ewf2_impl(&mut progress)
     }
 }
 
@@ -984,6 +1048,7 @@ fn check_hash_all_segments(
     expected_sha1: Option<[u8; 20]>,
     expected_sha256: Option<[u8; 32]>,
     issues: &mut Vec<EwfIntegrityAnomaly>,
+    progress: &mut dyn FnMut(AnalysisProgress),
 ) {
     let chunk_size = u64::from(geom.sectors_per_chunk) * u64::from(geom.bytes_per_sector);
     let total_bytes = geom.sector_count * u64::from(geom.bytes_per_sector);
@@ -1057,6 +1122,11 @@ fn check_hash_all_segments(
                 sha256_h.update(slice);
             }
             bytes_remaining = bytes_remaining.saturating_sub(to_hash as u64);
+            progress(AnalysisProgress {
+                chunks_done: global_chunk_idx,
+                chunks_total: None,
+                bytes_done: total_bytes - bytes_remaining,
+            });
         }
     }
 
@@ -1176,6 +1246,7 @@ fn verify_ewf2_sector_data(
     ct_end: usize,
     stored_md5: Option<[u8; 16]>,
     issues: &mut Vec<EwfIntegrityAnomaly>,
+    progress: &mut dyn FnMut(AnalysisProgress),
 ) -> Option<ComputedHashes> {
     let tbl = match data.get(ct_start..ct_end) {
         Some(t) => t,
@@ -1252,6 +1323,11 @@ fn verify_ewf2_sector_data(
             sha1_h.update(chunk_raw);
             sha256_h.update(chunk_raw);
         }
+        progress(AnalysisProgress {
+            chunks_done: i + 1,
+            chunks_total: Some(chunk_count),
+            bytes_done: ((i + 1) * raw_size) as u64,
+        });
     }
 
     let computed_md5:    [u8; 16] = md5_h.finalize().into();
