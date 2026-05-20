@@ -23,6 +23,7 @@ OPTIONS
     --print-hashes            Compute and print MD5, SHA-1, and SHA-256 of all sector data.
                               Combined with --json: adds a \"hashes\" object to the JSON output.
     --help                    Show this help and exit.
+    --version                 Print version and exit.
 
 EXIT CODES
     0   Clean — no anomalies at or above --min-severity
@@ -40,6 +41,11 @@ fn main() {
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{HELP}");
+        process::exit(0);
+    }
+
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("ewf-check {}", env!("CARGO_PKG_VERSION"));
         process::exit(0);
     }
 
