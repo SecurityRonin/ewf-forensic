@@ -1,4 +1,5 @@
-use ewf_forensic::{ComputedHashes, EwfIntegrityAnomaly, EwfIntegrityPath, Severity};
+use ewf_forensic::{AnalysisProgress, ComputedHashes, EwfIntegrityAnomaly, EwfIntegrityPath, Severity};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::process;
 
@@ -22,6 +23,7 @@ OPTIONS
     --hash-sha256=<hex>       Compare computed SHA-256 against this hex string.
     --print-hashes            Compute and print MD5, SHA-1, and SHA-256 of all sector data.
                               Combined with --json: adds a \"hashes\" object to the JSON output.
+    --progress                Show a progress bar on stderr during analysis.
     --help                    Show this help and exit.
     --version                 Print version and exit.
 
@@ -52,6 +54,7 @@ fn main() {
     let mut min_severity = Severity::Info;
     let mut json_mode = false;
     let mut print_hashes = false;
+    let mut show_progress = false;
     let mut hash_md5: Option<[u8; 16]> = None;
     let mut hash_sha1: Option<[u8; 20]> = None;
     let mut hash_sha256: Option<[u8; 32]> = None;
@@ -73,6 +76,8 @@ fn main() {
             json_mode = true;
         } else if arg == "--print-hashes" {
             print_hashes = true;
+        } else if arg == "--progress" {
+            show_progress = true;
         } else if let Some(hex) = arg.strip_prefix("--hash-md5=") {
             hash_md5 = Some(parse_hex_fixed::<16>(hex, "--hash-md5"));
         } else if let Some(hex) = arg.strip_prefix("--hash-sha1=") {
@@ -103,7 +108,29 @@ fn main() {
     if let Some(h) = hash_sha1 { checker = checker.with_expected_sha1(h); }
     if let Some(h) = hash_sha256 { checker = checker.with_expected_sha256(h); }
 
-    let (findings, computed) = match (checker.analyse(), print_hashes) {
+    let analysis_result: std::io::Result<Vec<_>> = if show_progress {
+        let pb = ProgressBar::new(0);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} chunks")
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+        let res = checker.analyse_with_progress(|p: AnalysisProgress| {
+            if let Some(total) = p.chunks_total {
+                if pb.length() != Some(total as u64) {
+                    pb.set_length(total as u64);
+                }
+            }
+            pb.set_position(p.chunks_done as u64);
+        });
+        pb.finish_and_clear();
+        res.map(|(anomalies, ())| anomalies)
+    } else {
+        checker.analyse()
+    };
+
+    let (findings, computed) = match (analysis_result, print_hashes) {
         (Err(e), _) => {
             if json_mode {
                 println!("{{\"error\": \"{}\"}}", json_escape(&e.to_string()));

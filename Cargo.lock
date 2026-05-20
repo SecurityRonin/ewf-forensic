@@ -710,6 +710,7 @@ dependencies = [
  "blazehash",
  "flate2",
  "hex",
+ "indicatif",
  "md-5",
  "memmap2",
  "serde",
