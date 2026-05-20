@@ -200,6 +200,11 @@ pub enum EwfIntegrityAnomaly {
     ChunkDecompressionError {
         chunk_index: usize,
     },
+    /// EWF v2 file header specifies a compression algorithm not supported by this tool.
+    UnsupportedCompressionAlgorithm {
+        /// Value from file header bytes [10..12].
+        method_id: u16,
+    },
     /// Computed SHA-256 does not match an externally supplied reference.
     ExternalSha256Mismatch {
         computed: [u8; 32],
@@ -251,6 +256,7 @@ impl EwfIntegrityAnomaly {
             Self::Ewf2ChunkTableChecksumMismatch { .. } => Severity::Error,
             Self::ChunkChecksumMismatch { .. } => Severity::Error,
             Self::ChunkDecompressionError { .. } => Severity::Error,
+            Self::UnsupportedCompressionAlgorithm { .. } => Severity::Error,
             Self::ExternalSha256Mismatch { .. } => Severity::Critical,
             Self::Ewf2MediaInfoParseFailed => Severity::Error,
         }
@@ -336,6 +342,8 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "chunk {chunk_index}: Adler-32 mismatch (computed 0x{computed:08x}, stored 0x{stored:08x})"),
             Self::ChunkDecompressionError { chunk_index } =>
                 write!(f, "chunk {chunk_index}: zlib decompression failed — chunk data is corrupt"),
+            Self::UnsupportedCompressionAlgorithm { method_id } =>
+                write!(f, "EWF v2 file header specifies unsupported compression algorithm 0x{method_id:04x} — only deflate (0/1) is supported"),
             Self::Ewf2MediaInfoParseFailed =>
                 write!(f, "EWF v2 media information section body could not be decompressed or decoded"),
         }
@@ -663,6 +671,15 @@ impl<'a> EwfIntegrity<'a> {
                 issues.push(EwfIntegrityAnomaly::SegmentOutOfOrder {
                     segment_number: seg_num as u16,
                     expected: expected_seg_num as u16,
+                });
+            }
+
+            // compression_method at file header [10..12]: 0=none/deflate, 1=deflate.
+            // Values ≥ 2 indicate bzip2, lzma, or other algorithms not supported here.
+            let compression_method = u16::from_le_bytes(data[10..12].try_into().unwrap());
+            if compression_method > 1 {
+                issues.push(EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm {
+                    method_id: compression_method,
                 });
             }
 

@@ -244,6 +244,7 @@ fn anomaly_kind(a: &EwfIntegrityAnomaly) -> &'static str {
         EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch { .. } => "Ewf2ChunkTableChecksumMismatch",
         EwfIntegrityAnomaly::ChunkChecksumMismatch { .. } => "ChunkChecksumMismatch",
         EwfIntegrityAnomaly::ChunkDecompressionError { .. } => "ChunkDecompressionError",
+        EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { .. } => "UnsupportedCompressionAlgorithm",
         EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed => "Ewf2MediaInfoParseFailed",
     }
 }
