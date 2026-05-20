@@ -122,6 +122,11 @@ pub enum EwfIntegrityAnomaly {
         stored: [u8; 16],
     },
     HashSectionMissing,
+    /// `table2` body differs from `table` body — one of the redundant copies is corrupt.
+    Table2Mismatch {
+        /// Byte offset into the table body where the first difference was found.
+        offset: usize,
+    },
     /// The `error2` section records acquisition errors (unreadable sectors).
     BadSectorsPresent {
         /// Number of error entries in the `error2` section.
@@ -229,6 +234,7 @@ impl EwfIntegrityAnomaly {
             Self::SectionGapZero { .. } => Severity::Info,
             Self::HashMismatch { .. } => Severity::Error,
             Self::HashSectionMissing => Severity::Warning,
+            Self::Table2Mismatch { .. } => Severity::Error,
             Self::BadSectorsPresent { .. } => Severity::Warning,
             Self::SegmentOutOfOrder { .. } => Severity::Error,
             Self::DigestSha1Mismatch { .. } => Severity::Error,
@@ -294,6 +300,8 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "MD5 mismatch: computed {}, stored {}", hex(computed), hex(stored)),
             Self::HashSectionMissing =>
                 write!(f, "hash section missing — cannot verify MD5"),
+            Self::Table2Mismatch { offset } =>
+                write!(f, "table2 body differs from table at byte offset {offset} — one redundant copy is corrupt"),
             Self::BadSectorsPresent { count } =>
                 write!(f, "error2 section reports {count} unreadable sector range(s) from acquisition"),
             Self::SegmentOutOfOrder { segment_number, expected } =>
@@ -553,6 +561,26 @@ impl<'a> EwfIntegrity<'a> {
                 );
             } else {
                 issues.push(EwfIntegrityAnomaly::TableSectionMissing);
+            }
+
+            // table2 consistency: when both table and table2 exist, bodies must match.
+            if let (Some(t1), Some(t2)) = (
+                sections.iter().find(|s| s.type_name == "table"),
+                sections.iter().find(|s| s.type_name == "table2"),
+            ) {
+                let b1_start = (t1.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                let b1_end = (t1.offset + t1.size) as usize;
+                let b2_start = (t2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                let b2_end = (t2.offset + t2.size) as usize;
+                if let (Some(body1), Some(body2)) = (data.get(b1_start..b1_end), data.get(b2_start..b2_end)) {
+                    if body1.len() == body2.len() {
+                        if let Some(offset) = body1.iter().zip(body2).position(|(a, b)| a != b) {
+                            issues.push(EwfIntegrityAnomaly::Table2Mismatch { offset });
+                        }
+                    } else {
+                        issues.push(EwfIntegrityAnomaly::Table2Mismatch { offset: 0 });
+                    }
+                }
             }
 
             // error2 section: parse entry_count, warn if any unreadable sectors.
@@ -844,6 +872,24 @@ impl<'a> EwfIntegrity<'a> {
                 check_table_v1(data, table.offset, vol_count, file_size, sectors_range, &mut issues);
             } else {
                 issues.push(EwfIntegrityAnomaly::TableSectionMissing);
+            }
+            if let (Some(t1), Some(t2)) = (
+                sections.iter().find(|s| s.type_name == "table"),
+                sections.iter().find(|s| s.type_name == "table2"),
+            ) {
+                let b1_start = (t1.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                let b1_end = (t1.offset + t1.size) as usize;
+                let b2_start = (t2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                let b2_end = (t2.offset + t2.size) as usize;
+                if let (Some(body1), Some(body2)) = (data.get(b1_start..b1_end), data.get(b2_start..b2_end)) {
+                    if body1.len() == body2.len() {
+                        if let Some(offset) = body1.iter().zip(body2).position(|(a, b)| a != b) {
+                            issues.push(EwfIntegrityAnomaly::Table2Mismatch { offset });
+                        }
+                    } else {
+                        issues.push(EwfIntegrityAnomaly::Table2Mismatch { offset: 0 });
+                    }
+                }
             }
             if let Some(e2) = sections.iter().find(|s| s.type_name == "error2") {
                 let body_start = (e2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
