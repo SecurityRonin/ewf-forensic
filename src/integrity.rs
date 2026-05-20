@@ -425,6 +425,7 @@ impl<'a> EwfIntegrity<'a> {
         let multi = n > 1;
         let mut geometry: Option<VolumeGeometry> = None;
         let mut all_sections: Vec<Vec<Section>> = Vec::with_capacity(n);
+        let mut total_table_entries: u32 = 0;
 
         for (idx, &data) in self.segments.iter().enumerate() {
             let expected_seg_num = (idx + 1) as u16;
@@ -485,7 +486,8 @@ impl<'a> EwfIntegrity<'a> {
                 issues.push(EwfIntegrityAnomaly::VolumeSectionMissing);
             }
 
-            // Table integrity — only check chunk count mismatch in single-segment mode
+            // Table integrity — single-segment: check per-entry-count vs volume directly.
+            // Multi-segment: accumulate for post-loop total comparison.
             let vol_count = if !multi && idx == 0 {
                 geometry.as_ref().map(|g| g.chunk_count)
             } else {
@@ -496,6 +498,11 @@ impl<'a> EwfIntegrity<'a> {
                 .find(|s| s.type_name == "sectors")
                 .map(|s| (s.offset + SECTION_DESCRIPTOR_SIZE as u64, s.offset + s.size));
             if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
+                let data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
+                if data.len() >= data_start + 4 {
+                    let count = u32::from_le_bytes(data[data_start..data_start + 4].try_into().unwrap());
+                    total_table_entries = total_table_entries.saturating_add(count);
+                }
                 check_table_v1(
                     data,
                     table.offset,
@@ -512,6 +519,18 @@ impl<'a> EwfIntegrity<'a> {
             }
 
             all_sections.push(sections);
+        }
+
+        // Multi-segment total chunk count vs sum of all table entry counts.
+        if multi {
+            if let Some(geom) = &geometry {
+                if total_table_entries != geom.chunk_count {
+                    issues.push(EwfIntegrityAnomaly::TableChunkCountMismatch {
+                        in_volume: geom.chunk_count,
+                        in_table: total_table_entries,
+                    });
+                }
+            }
         }
 
         // Hash verification spans all segments
@@ -707,6 +726,7 @@ impl<'a> EwfIntegrity<'a> {
         let multi = n > 1;
         let mut geometry: Option<VolumeGeometry> = None;
         let mut all_sections: Vec<Vec<Section>> = Vec::with_capacity(n);
+        let mut total_table_entries: u32 = 0;
 
         for (idx, &data) in self.segments.iter().enumerate() {
             let expected_seg_num = (idx + 1) as u16;
@@ -748,12 +768,28 @@ impl<'a> EwfIntegrity<'a> {
             let sectors_range = sections.iter().find(|s| s.type_name == "sectors")
                 .map(|s| (s.offset + SECTION_DESCRIPTOR_SIZE as u64, s.offset + s.size));
             if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
+                let data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
+                if data.len() >= data_start + 4 {
+                    let count = u32::from_le_bytes(data[data_start..data_start + 4].try_into().unwrap());
+                    total_table_entries = total_table_entries.saturating_add(count);
+                }
                 check_table_v1(data, table.offset, vol_count, file_size, sectors_range, &mut issues);
             }
             if is_last && !sections.iter().any(|s| s.type_name == "done") {
                 issues.push(EwfIntegrityAnomaly::DoneSectionMissing);
             }
             all_sections.push(sections);
+        }
+
+        if multi {
+            if let Some(geom) = &geometry {
+                if total_table_entries != geom.chunk_count {
+                    issues.push(EwfIntegrityAnomaly::TableChunkCountMismatch {
+                        in_volume: geom.chunk_count,
+                        in_table: total_table_entries,
+                    });
+                }
+            }
         }
 
         if let Some(geom) = &geometry {
