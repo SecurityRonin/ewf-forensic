@@ -179,6 +179,10 @@ pub enum EwfIntegrityAnomaly {
         computed: [u8; 32],
         expected: [u8; 32],
     },
+    /// The EWF v2 media information section body could not be decompressed (zlib
+    /// failure) or decoded as UTF-16LE.  The body is required to be a zlib-
+    /// compressed, BOM-prefixed UTF-16LE key=value table.
+    Ewf2MediaInfoParseFailed,
 }
 
 impl EwfIntegrityAnomaly {
@@ -216,6 +220,7 @@ impl EwfIntegrityAnomaly {
             Self::ChunkChecksumMismatch { .. } => Severity::Error,
             Self::ChunkDecompressionError { .. } => Severity::Error,
             Self::ExternalSha256Mismatch { .. } => Severity::Critical,
+            Self::Ewf2MediaInfoParseFailed => Severity::Error,
         }
     }
 }
@@ -287,6 +292,8 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "chunk {chunk_index}: Adler-32 mismatch (computed 0x{computed:08x}, stored 0x{stored:08x})"),
             Self::ChunkDecompressionError { chunk_index } =>
                 write!(f, "chunk {chunk_index}: zlib decompression failed — chunk data is corrupt"),
+            Self::Ewf2MediaInfoParseFailed =>
+                write!(f, "EWF v2 media information section body could not be decompressed or decoded"),
         }
     }
 }
