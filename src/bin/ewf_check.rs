@@ -226,6 +226,7 @@ fn anomaly_kind(a: &EwfIntegrityAnomaly) -> &'static str {
         EwfIntegrityAnomaly::HashSectionMissing => "HashSectionMissing",
         EwfIntegrityAnomaly::SegmentOutOfOrder { .. } => "SegmentOutOfOrder",
         EwfIntegrityAnomaly::DigestSha1Mismatch { .. } => "DigestSha1Mismatch",
+        EwfIntegrityAnomaly::DigestSha256Mismatch { .. } => "DigestSha256Mismatch",
         EwfIntegrityAnomaly::ExternalMd5Mismatch { .. } => "ExternalMd5Mismatch",
         EwfIntegrityAnomaly::ExternalSha1Mismatch { .. } => "ExternalSha1Mismatch",
         EwfIntegrityAnomaly::ExternalSha256Mismatch { .. } => "ExternalSha256Mismatch",

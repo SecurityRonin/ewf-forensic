@@ -38,6 +38,7 @@ const EVF2_TYPE_MEDIA_INFO: u32 = 0x02;
 const EVF2_TYPE_CHUNK_TABLE: u32 = 0x04;
 const EVF2_TYPE_MD5_HASH: u32 = 0x08;
 const EVF2_TYPE_SHA1_HASH: u32 = 0x09;
+const EVF2_TYPE_SHA256_HASH: u32 = 0x0A;
 const EVF2_CHUNK_TABLE_HEADER_SIZE: usize = 32;
 const EVF2_CHUNK_TABLE_ENTRY_SIZE: usize = 16;
 
@@ -129,6 +130,11 @@ pub enum EwfIntegrityAnomaly {
         computed: [u8; 20],
         stored: [u8; 20],
     },
+    /// Computed SHA-256 of all sector data does not match the stored SHA-256 in the hash section.
+    DigestSha256Mismatch {
+        computed: [u8; 32],
+        stored: [u8; 32],
+    },
     // ── External reference hash ───────────────────────────────────────────────
     /// Computed MD5 does not match an externally supplied reference (e.g. chain-of-custody form).
     ExternalMd5Mismatch {
@@ -214,6 +220,7 @@ impl EwfIntegrityAnomaly {
             Self::HashSectionMissing => Severity::Warning,
             Self::SegmentOutOfOrder { .. } => Severity::Error,
             Self::DigestSha1Mismatch { .. } => Severity::Error,
+            Self::DigestSha256Mismatch { .. } => Severity::Error,
             Self::ExternalMd5Mismatch { .. } => Severity::Critical,
             Self::ExternalSha1Mismatch { .. } => Severity::Critical,
             Self::VolumeBodyCrcMismatch { .. } => Severity::Error,
@@ -275,6 +282,8 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "segment {segment_number} found where segment {expected} was expected"),
             Self::DigestSha1Mismatch { computed, stored } =>
                 write!(f, "SHA-1 mismatch: computed {}, stored {}", hex(computed), hex(stored)),
+            Self::DigestSha256Mismatch { computed, stored } =>
+                write!(f, "SHA-256 mismatch: computed {}, stored {}", hex(computed), hex(stored)),
             Self::ExternalMd5Mismatch { computed, expected } =>
                 write!(f, "MD5 does not match chain-of-custody reference: computed {}, expected {}", hex(computed), hex(expected)),
             Self::ExternalSha1Mismatch { computed, expected } =>
@@ -603,6 +612,7 @@ impl<'a> EwfIntegrity<'a> {
             let mut chunk_table_body: Option<(usize, usize)> = None;
             let mut stored_sector_md5: Option<[u8; 16]> = None;
             let mut stored_sector_sha1: Option<[u8; 20]> = None;
+            let mut stored_sector_sha256: Option<[u8; 32]> = None;
             let mut desc_offset = data.len().saturating_sub(EVF2_SECTION_DESCRIPTOR_SIZE);
 
             loop {
@@ -676,6 +686,16 @@ impl<'a> EwfIntegrity<'a> {
                                 }
                             }
                         }
+                        EVF2_TYPE_SHA256_HASH => {
+                            has_hash = true;
+                            if data_size >= 32 {
+                                if let Some(body) = data.get(body_start..body_end) {
+                                    let mut h = [0u8; 32];
+                                    h.copy_from_slice(&body[..32]);
+                                    stored_sector_sha256 = Some(h);
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -696,7 +716,7 @@ impl<'a> EwfIntegrity<'a> {
             // Sector data verification: parse chunk table, verify per-chunk Adler-32
             // and compute MD5 of all sector data for comparison with stored value.
             if let Some((ct_start, ct_end)) = chunk_table_body {
-                if let Some(hashes) = verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, stored_sector_sha1, &mut issues, progress) {
+                if let Some(hashes) = verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, stored_sector_sha1, stored_sector_sha256, &mut issues, progress) {
                     if let Some(expected) = self.expected_md5 {
                         if hashes.md5 != expected {
                             issues.push(EwfIntegrityAnomaly::ExternalMd5Mismatch {
@@ -1315,6 +1335,7 @@ fn verify_ewf2_sector_data(
     ct_end: usize,
     stored_md5: Option<[u8; 16]>,
     stored_sha1: Option<[u8; 20]>,
+    stored_sha256: Option<[u8; 32]>,
     issues: &mut Vec<EwfIntegrityAnomaly>,
     progress: &mut dyn FnMut(AnalysisProgress),
 ) -> Option<ComputedHashes> {
@@ -1414,6 +1435,15 @@ fn verify_ewf2_sector_data(
         if computed_sha1 != stored {
             issues.push(EwfIntegrityAnomaly::DigestSha1Mismatch {
                 computed: computed_sha1,
+                stored,
+            });
+        }
+    }
+
+    if let Some(stored) = stored_sha256 {
+        if computed_sha256 != stored {
+            issues.push(EwfIntegrityAnomaly::DigestSha256Mismatch {
+                computed: computed_sha256,
                 stored,
             });
         }
