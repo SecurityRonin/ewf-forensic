@@ -1251,8 +1251,7 @@ fn check_hash_all_segments(
 /// Verify EWF v2 chunk data integrity and compare overall MD5 against stored value.
 ///
 /// Chunk table entry layout (16 bytes each, starting at body offset 32):
-///   [0..4]:   file_offset (u32 LE) — absolute position of chunk data in the file
-///   [4..8]:   padding (u32, zero)
+///   [0..8]:   file_offset (u64 LE) — absolute position of chunk data in the file
 ///   [8..12]:  data_size (u32 LE) — raw_sector_bytes + 4 (Adler-32 trailer)
 /// Attempt to zlib-decompress and UTF-16LE-decode a media_info section body.
 ///
@@ -1326,7 +1325,7 @@ fn verify_ewf2_sector_data(
         if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() {
             break;
         }
-        let file_offset = u32::from_le_bytes(tbl[entry_off..entry_off + 4].try_into().unwrap()) as usize;
+        let file_offset = u64::from_le_bytes(tbl[entry_off..entry_off + 8].try_into().unwrap()) as usize;
         let chunk_data_size = u32::from_le_bytes(tbl[entry_off + 8..entry_off + 12].try_into().unwrap()) as usize;
         let flags = u32::from_le_bytes(tbl[entry_off + 12..entry_off + 16].try_into().unwrap());
 
@@ -1455,7 +1454,7 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
         for i in 0..chunk_count {
             let entry_off = EVF2_CHUNK_TABLE_HEADER_SIZE + i * EVF2_CHUNK_TABLE_ENTRY_SIZE;
             if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() { break; }
-            let file_offset = u32::from_le_bytes(tbl[entry_off..entry_off + 4].try_into().unwrap()) as usize;
+            let file_offset = u64::from_le_bytes(tbl[entry_off..entry_off + 8].try_into().unwrap()) as usize;
             let chunk_data_size = u32::from_le_bytes(tbl[entry_off + 8..entry_off + 12].try_into().unwrap()) as usize;
             let flags = u32::from_le_bytes(tbl[entry_off + 12..entry_off + 16].try_into().unwrap());
             let raw_size = chunk_data_size.saturating_sub(4);
