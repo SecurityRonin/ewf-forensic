@@ -376,6 +376,20 @@ pub struct ComputedHashes {
     pub sha256: [u8; 32],
 }
 
+/// Acquisition metadata parsed from the zlib-compressed `header` section of an EWF v1 image.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct EwfHeaderMetadata {
+    pub description: String,
+    pub case_number: String,
+    pub evidence_number: String,
+    pub examiner_name: String,
+    pub acquisition_date: String,
+    pub system_date: String,
+    pub password_hash: String,
+    pub acquisition_software: String,
+}
+
 // ── Public entry point ────────────────────────────────────────────────────────
 
 pub struct EwfIntegrity<'a> {
@@ -425,6 +439,20 @@ impl<'a> EwfIntegrity<'a> {
     pub fn with_expected_sha256(mut self, hash: [u8; 32]) -> Self {
         self.expected_sha256 = Some(hash);
         self
+    }
+
+    /// Parse the zlib-compressed acquisition metadata from the `header` section.
+    ///
+    /// Returns `Some` on the first segment that contains a valid, decompressible
+    /// `header` section with a parseable key-value block.  Returns `None` if no
+    /// such section exists or any parse step fails.
+    pub fn header_metadata(&self) -> Option<EwfHeaderMetadata> {
+        for &data in &self.segments {
+            if let Some(meta) = parse_header_section(data) {
+                return Some(meta);
+            }
+        }
+        None
     }
 
     /// Compute MD5, SHA-1, and SHA-256 of all sector data without verifying stored hashes.
@@ -953,6 +981,77 @@ impl<'a> EwfIntegrity<'a> {
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+fn parse_header_section(data: &[u8]) -> Option<EwfHeaderMetadata> {
+    if data.len() < FILE_HEADER_SIZE + SECTION_DESCRIPTOR_SIZE {
+        return None;
+    }
+    let desc_off = FILE_HEADER_SIZE;
+    let desc = &data[desc_off..desc_off + SECTION_DESCRIPTOR_SIZE];
+    let type_end = desc[..16].iter().position(|&b| b == 0).unwrap_or(16);
+    if &desc[..type_end] != b"header" {
+        return None;
+    }
+    let section_size = u64::from_le_bytes(desc[24..32].try_into().unwrap()) as usize;
+    let body_start = desc_off + SECTION_DESCRIPTOR_SIZE;
+    let body_end = (desc_off + section_size).min(data.len());
+    if body_start >= body_end {
+        return None;
+    }
+    let compressed = &data[body_start..body_end];
+
+    let mut decoder = ZlibDecoder::new(compressed);
+    let mut text = String::new();
+    decoder.read_to_string(&mut text).ok()?;
+
+    parse_header_text(&text)
+}
+
+fn parse_header_text(text: &str) -> Option<EwfHeaderMetadata> {
+    // Format (CRLF or LF line endings):
+    //   line 0: "1"
+    //   line 1: "main"
+    //   line 2: tab-delimited key names
+    //   line 3: tab-delimited values
+    let lines: Vec<&str> = text
+        .lines()
+        .map(|l| l.trim_end_matches('\r'))
+        .filter(|l| !l.is_empty())
+        .collect();
+    if lines.len() < 4 {
+        return None;
+    }
+    let keys: Vec<&str> = lines[2].split('\t').collect();
+    let vals: Vec<&str> = lines[3].split('\t').collect();
+
+    let mut meta = EwfHeaderMetadata {
+        description: String::new(),
+        case_number: String::new(),
+        evidence_number: String::new(),
+        examiner_name: String::new(),
+        acquisition_date: String::new(),
+        system_date: String::new(),
+        password_hash: String::new(),
+        acquisition_software: String::new(),
+    };
+
+    for (i, &key) in keys.iter().enumerate() {
+        let val = vals.get(i).copied().unwrap_or("").to_owned();
+        match key {
+            "a" => meta.description = val,
+            "c" => meta.case_number = val,
+            "e" => meta.evidence_number = val,
+            "t" => meta.examiner_name = val,
+            "m" => meta.acquisition_date = val,
+            "u" => meta.system_date = val,
+            "p" => meta.password_hash = val,
+            "r" => meta.acquisition_software = val,
+            _ => {}
+        }
+    }
+
+    Some(meta)
+}
 
 struct Section {
     type_name: String,
