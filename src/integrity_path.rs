@@ -1,4 +1,4 @@
-use crate::integrity::{ComputedHashes, EwfIntegrity, EwfIntegrityAnomaly};
+use crate::integrity::{AnalysisProgress, ComputedHashes, EwfIntegrity, EwfIntegrityAnomaly};
 use memmap2::Mmap;
 use std::fs::File;
 use std::io;
@@ -157,6 +157,44 @@ impl EwfIntegrityPath {
             .unwrap_or(ComputedHashes { md5: [0u8; 16], sha1: [0u8; 20], sha256: [0u8; 32] });
 
         Ok((anomalies, hashes))
+    }
+
+    /// Run integrity analysis while reporting progress to a callback.
+    ///
+    /// Identical to [`analyse`] but invokes `progress` after each chunk is
+    /// processed so callers can display a progress bar for large images.
+    ///
+    /// Returns `(anomalies, ())` on success, or `Err` if a segment cannot be
+    /// opened or memory-mapped.
+    pub fn analyse_with_progress(
+        &self,
+        mut progress: impl FnMut(AnalysisProgress),
+    ) -> io::Result<(Vec<EwfIntegrityAnomaly>, ())> {
+        let mmaps = self
+            .segment_paths
+            .iter()
+            .map(|p| {
+                let file = File::open(p)?;
+                // SAFETY: read-only mmap of an immutable evidence file.
+                unsafe { Mmap::map(&file) }
+            })
+            .collect::<io::Result<Vec<Mmap>>>()?;
+
+        let seg_refs: Vec<&[u8]> = mmaps.iter().map(|m| m.as_ref()).collect();
+
+        let mut checker = EwfIntegrity::from_segments(&seg_refs);
+        if let Some(h) = self.expected_md5 {
+            checker = checker.with_expected_md5(h);
+        }
+        if let Some(h) = self.expected_sha1 {
+            checker = checker.with_expected_sha1(h);
+        }
+        if let Some(h) = self.expected_sha256 {
+            checker = checker.with_expected_sha256(h);
+        }
+
+        let anomalies = checker.analyse_with_progress(&mut progress);
+        Ok((anomalies, ()))
     }
 }
 
