@@ -214,6 +214,8 @@ fn anomaly_kind(a: &EwfIntegrityAnomaly) -> &'static str {
         EwfIntegrityAnomaly::VolumeSectionMissing => "VolumeSectionMissing",
         EwfIntegrityAnomaly::UnknownSectionType { .. } => "UnknownSectionType",
         EwfIntegrityAnomaly::DoneSectionMissing => "DoneSectionMissing",
+        EwfIntegrityAnomaly::SectorsSectionMissing => "SectorsSectionMissing",
+        EwfIntegrityAnomaly::TableSectionMissing => "TableSectionMissing",
         EwfIntegrityAnomaly::ChunkSizeInvalid { .. } => "ChunkSizeInvalid",
         EwfIntegrityAnomaly::SectorCountMismatch { .. } => "SectorCountMismatch",
         EwfIntegrityAnomaly::BytesPerSectorInvalid { .. } => "BytesPerSectorInvalid",

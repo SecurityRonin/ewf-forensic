@@ -79,6 +79,10 @@ pub enum EwfIntegrityAnomaly {
         type_name: String,
     },
     DoneSectionMissing,
+    /// No `sectors` section was found in this EWF v1 segment.
+    SectorsSectionMissing,
+    /// No `table` section was found in this EWF v1 segment.
+    TableSectionMissing,
     ChunkSizeInvalid {
         sectors_per_chunk: u32,
         bytes_per_sector: u32,
@@ -208,6 +212,8 @@ impl EwfIntegrityAnomaly {
             Self::VolumeSectionMissing => Severity::Critical,
             Self::UnknownSectionType { .. } => Severity::Warning,
             Self::DoneSectionMissing => Severity::Warning,
+            Self::SectorsSectionMissing => Severity::Error,
+            Self::TableSectionMissing => Severity::Error,
             Self::ChunkSizeInvalid { .. } => Severity::Error,
             Self::SectorCountMismatch { .. } => Severity::Error,
             Self::BytesPerSectorInvalid { .. } => Severity::Error,
@@ -258,6 +264,10 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "unknown section type '{type_name}' at 0x{offset:x}"),
             Self::DoneSectionMissing =>
                 write!(f, "done section missing from final segment"),
+            Self::SectorsSectionMissing =>
+                write!(f, "sectors section missing — chunk data not found in segment"),
+            Self::TableSectionMissing =>
+                write!(f, "table section missing — chunk offset table not found in segment"),
             Self::ChunkSizeInvalid { sectors_per_chunk, bytes_per_sector } =>
                 write!(f, "invalid chunk size: {sectors_per_chunk} sectors × {bytes_per_sector} bytes/sector"),
             Self::SectorCountMismatch { declared, expected } =>
@@ -513,10 +523,12 @@ impl<'a> EwfIntegrity<'a> {
             } else {
                 None
             };
-            let sectors_range = sections
-                .iter()
-                .find(|s| s.type_name == "sectors")
+            let sectors_section = sections.iter().find(|s| s.type_name == "sectors");
+            let sectors_range = sectors_section
                 .map(|s| (s.offset + SECTION_DESCRIPTOR_SIZE as u64, s.offset + s.size));
+            if sectors_section.is_none() {
+                issues.push(EwfIntegrityAnomaly::SectorsSectionMissing);
+            }
             if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
                 let data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
                 if data.len() >= data_start + 4 {
@@ -531,6 +543,8 @@ impl<'a> EwfIntegrity<'a> {
                     sectors_range,
                     &mut issues,
                 );
+            } else {
+                issues.push(EwfIntegrityAnomaly::TableSectionMissing);
             }
 
             // Done section expected only in the last segment
@@ -796,8 +810,12 @@ impl<'a> EwfIntegrity<'a> {
                 issues.push(EwfIntegrityAnomaly::VolumeSectionMissing);
             }
             let vol_count = if !multi && idx == 0 { geometry.as_ref().map(|g| g.chunk_count) } else { None };
-            let sectors_range = sections.iter().find(|s| s.type_name == "sectors")
+            let sectors_section = sections.iter().find(|s| s.type_name == "sectors");
+            let sectors_range = sectors_section
                 .map(|s| (s.offset + SECTION_DESCRIPTOR_SIZE as u64, s.offset + s.size));
+            if sectors_section.is_none() {
+                issues.push(EwfIntegrityAnomaly::SectorsSectionMissing);
+            }
             if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
                 let data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
                 if data.len() >= data_start + 4 {
@@ -805,6 +823,8 @@ impl<'a> EwfIntegrity<'a> {
                     total_table_entries = total_table_entries.saturating_add(count);
                 }
                 check_table_v1(data, table.offset, vol_count, file_size, sectors_range, &mut issues);
+            } else {
+                issues.push(EwfIntegrityAnomaly::TableSectionMissing);
             }
             if is_last && !sections.iter().any(|s| s.type_name == "done") {
                 issues.push(EwfIntegrityAnomaly::DoneSectionMissing);
