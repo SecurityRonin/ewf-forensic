@@ -677,6 +677,11 @@ impl<'a> EwfIntegrity<'a> {
         let mut issues = Vec::new();
         let n = self.segments.len();
 
+        // Stored hashes live in the FINAL segment and cover ALL segments' data.
+        let mut final_stored_md5:    Option<[u8; 16]> = None;
+        let mut final_stored_sha1:   Option<[u8; 20]> = None;
+        let mut final_stored_sha256: Option<[u8; 32]> = None;
+
         for (idx, &data) in self.segments.iter().enumerate() {
             let expected_seg_num = (idx + 1) as u32;
 
@@ -819,34 +824,51 @@ impl<'a> EwfIntegrity<'a> {
                 issues.push(EwfIntegrityAnomaly::Ewf2MediaInfoMissing);
             }
 
-            // Sector data verification: parse chunk table, verify per-chunk Adler-32
-            // and compute MD5 of all sector data for comparison with stored value.
+            // Capture stored hashes from the final segment; they cover ALL segments' data.
+            if idx == n - 1 {
+                final_stored_md5    = stored_sector_md5;
+                final_stored_sha1   = stored_sector_sha1;
+                final_stored_sha256 = stored_sector_sha256;
+            }
+
+            // Per-chunk Adler-32 verification only; stored-hash comparison happens
+            // cross-segment after the loop to avoid false positives on multi-segment images.
             if let Some((ct_start, ct_end)) = chunk_table_body {
-                if let Some(hashes) = verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, stored_sector_sha1, stored_sector_sha256, &mut issues, progress) {
-                    if let Some(expected) = self.expected_md5 {
-                        if hashes.md5 != expected {
-                            issues.push(EwfIntegrityAnomaly::ExternalMd5Mismatch {
-                                computed: hashes.md5,
-                                expected,
-                            });
-                        }
-                    }
-                    if let Some(expected) = self.expected_sha1 {
-                        if hashes.sha1 != expected {
-                            issues.push(EwfIntegrityAnomaly::ExternalSha1Mismatch {
-                                computed: hashes.sha1,
-                                expected,
-                            });
-                        }
-                    }
-                    if let Some(expected) = self.expected_sha256 {
-                        if hashes.sha256 != expected {
-                            issues.push(EwfIntegrityAnomaly::ExternalSha256Mismatch {
-                                computed: hashes.sha256,
-                                expected,
-                            });
-                        }
-                    }
+                verify_ewf2_sector_data(data, ct_start, ct_end, None, None, None, &mut issues, progress);
+            }
+        }
+
+        // Cross-segment hash comparison: compute hashes over ALL segments and compare
+        // with stored values from the final segment, plus any external reference hashes.
+        if let Some(computed) = compute_hashes_ewf2(&self.segments) {
+            if let Some(stored) = final_stored_md5 {
+                if computed.md5 != stored {
+                    issues.push(EwfIntegrityAnomaly::HashMismatch { computed: computed.md5, stored });
+                }
+            }
+            if let Some(stored) = final_stored_sha1 {
+                if computed.sha1 != stored {
+                    issues.push(EwfIntegrityAnomaly::DigestSha1Mismatch { computed: computed.sha1, stored });
+                }
+            }
+            if let Some(stored) = final_stored_sha256 {
+                if computed.sha256 != stored {
+                    issues.push(EwfIntegrityAnomaly::DigestSha256Mismatch { computed: computed.sha256, stored });
+                }
+            }
+            if let Some(expected) = self.expected_md5 {
+                if computed.md5 != expected {
+                    issues.push(EwfIntegrityAnomaly::ExternalMd5Mismatch { computed: computed.md5, expected });
+                }
+            }
+            if let Some(expected) = self.expected_sha1 {
+                if computed.sha1 != expected {
+                    issues.push(EwfIntegrityAnomaly::ExternalSha1Mismatch { computed: computed.sha1, expected });
+                }
+            }
+            if let Some(expected) = self.expected_sha256 {
+                if computed.sha256 != expected {
+                    issues.push(EwfIntegrityAnomaly::ExternalSha256Mismatch { computed: computed.sha256, expected });
                 }
             }
         }
