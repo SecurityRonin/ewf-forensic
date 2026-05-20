@@ -572,6 +572,7 @@ impl<'a> EwfIntegrity<'a> {
             let mut has_media_info = false;
             let mut chunk_table_body: Option<(usize, usize)> = None;
             let mut stored_sector_md5: Option<[u8; 16]> = None;
+            let mut stored_sector_sha1: Option<[u8; 20]> = None;
             let mut desc_offset = data.len().saturating_sub(EVF2_SECTION_DESCRIPTOR_SIZE);
 
             loop {
@@ -635,7 +636,16 @@ impl<'a> EwfIntegrity<'a> {
                                 }
                             }
                         }
-                        EVF2_TYPE_SHA1_HASH => has_hash = true,
+                        EVF2_TYPE_SHA1_HASH => {
+                            has_hash = true;
+                            if data_size >= 20 {
+                                if let Some(body) = data.get(body_start..body_end) {
+                                    let mut h = [0u8; 20];
+                                    h.copy_from_slice(&body[..20]);
+                                    stored_sector_sha1 = Some(h);
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -656,7 +666,7 @@ impl<'a> EwfIntegrity<'a> {
             // Sector data verification: parse chunk table, verify per-chunk Adler-32
             // and compute MD5 of all sector data for comparison with stored value.
             if let Some((ct_start, ct_end)) = chunk_table_body {
-                if let Some(hashes) = verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, &mut issues, progress) {
+                if let Some(hashes) = verify_ewf2_sector_data(data, ct_start, ct_end, stored_sector_md5, stored_sector_sha1, &mut issues, progress) {
                     if let Some(expected) = self.expected_md5 {
                         if hashes.md5 != expected {
                             issues.push(EwfIntegrityAnomaly::ExternalMd5Mismatch {
@@ -1245,6 +1255,7 @@ fn verify_ewf2_sector_data(
     ct_start: usize,
     ct_end: usize,
     stored_md5: Option<[u8; 16]>,
+    stored_sha1: Option<[u8; 20]>,
     issues: &mut Vec<EwfIntegrityAnomaly>,
     progress: &mut dyn FnMut(AnalysisProgress),
 ) -> Option<ComputedHashes> {
@@ -1337,6 +1348,15 @@ fn verify_ewf2_sector_data(
     if let Some(stored) = stored_md5 {
         if computed_md5 != stored {
             issues.push(EwfIntegrityAnomaly::HashMismatch { computed: computed_md5, stored });
+        }
+    }
+
+    if let Some(stored) = stored_sha1 {
+        if computed_sha1 != stored {
+            issues.push(EwfIntegrityAnomaly::DigestSha1Mismatch {
+                computed: computed_sha1,
+                stored,
+            });
         }
     }
 
