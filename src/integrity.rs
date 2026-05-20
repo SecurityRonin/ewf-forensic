@@ -51,7 +51,7 @@ pub enum Severity {
     Critical,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EwfIntegrityAnomaly {
     // ── EWF v1 ───────────────────────────────────────────────────────────────
     InvalidSignature,
@@ -302,6 +302,18 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Snapshot of analysis progress, delivered to the callback passed to
+/// [`EwfIntegrity::analyse_with_progress`] after each chunk is processed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnalysisProgress {
+    /// Number of chunks fully processed (hashed + Adler-32 verified) so far.
+    pub chunks_done: usize,
+    /// Total chunks in the current segment; `None` until the chunk table is parsed.
+    pub chunks_total: Option<usize>,
+    /// Total sector-data bytes processed so far.
+    pub bytes_done: u64,
+}
+
 /// The three hashes computed over all sector data in an EWF image.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComputedHashes {
@@ -383,6 +395,26 @@ impl<'a> EwfIntegrity<'a> {
             return self.analyse_all_ewf2();
         }
         self.analyse_all_ewf1()
+    }
+
+    /// Analyse with a per-chunk progress callback.
+    ///
+    /// The callback receives an [`AnalysisProgress`] snapshot after each chunk
+    /// is processed.  The final call has `chunks_done == chunks_total` (for
+    /// EWF v2) or `chunks_done > 0` (for EWF v1).
+    ///
+    /// Returns the same anomaly list as [`analyse`][Self::analyse].
+    pub fn analyse_with_progress(
+        &self,
+        progress: impl FnMut(AnalysisProgress),
+    ) -> Vec<EwfIntegrityAnomaly> {
+        let first = self.segments.first().copied().unwrap_or(&[]);
+        if first.len() >= 8
+            && (first[0..8] == EVF2_SIGNATURE || first[0..8] == LEF2_SIGNATURE)
+        {
+            return self.analyse_all_ewf2_with_progress(progress);
+        }
+        self.analyse_all_ewf1_with_progress(progress)
     }
 
     // ── EWF v1 ───────────────────────────────────────────────────────────────
@@ -649,6 +681,22 @@ impl<'a> EwfIntegrity<'a> {
         }
 
         issues
+    }
+
+    fn analyse_all_ewf1_with_progress(
+        &self,
+        _progress: impl FnMut(AnalysisProgress),
+    ) -> Vec<EwfIntegrityAnomaly> {
+        // Stub: no progress events yet.  GREEN will wire the callback.
+        self.analyse_all_ewf1()
+    }
+
+    fn analyse_all_ewf2_with_progress(
+        &self,
+        _progress: impl FnMut(AnalysisProgress),
+    ) -> Vec<EwfIntegrityAnomaly> {
+        // Stub: no progress events yet.  GREEN will wire the callback.
+        self.analyse_all_ewf2()
     }
 }
 
