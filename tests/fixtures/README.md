@@ -14,6 +14,7 @@ cargo test --test tool_fixtures_tests -- --ignored
 | File | Format | Size | Tool |
 |------|--------|------|------|
 | `zeros_128s.Ex01` | EWF v2 (EnCase 7) | 66 400 B | ewfacquirestream 20231119 |
+| `zeros_128s_compressed.Ex01` | EWF v2 compressed | 1 166 B | Python zlib, verified by ewfverify |
 
 ### zeros_128s.Ex01
 
@@ -36,9 +37,28 @@ Result : SUCCESS (ewfverify exits 0)
 **ewfinfo geometry:** 128 sectors, 512 bytes/sector, 64 KB
 
 **ewf-forensic expected behavior:**
-- 1 INFO anomaly: `Ewf2SectorDataNotVerified` (honest partial-check disclosure)
-- 0 WARNING or ERROR anomalies
-- `ewf-check --min-severity=warning` exits 0
+- 0 anomalies at any severity
+- `ewf-check --min-severity=info` exits 0
+
+### zeros_128s_compressed.Ex01
+
+128 sectors × 512 bytes = 64 KB of zero-filled sector data, stored as 2 zlib-compressed
+chunks (chunk flag 0x03 = HAS\_CHECKSUM | IS\_COMPRESSED). Created with Python's `zlib.compress(level=1)`,
+validated by ewfverify.
+
+**ewfverify-confirmed hashes (independent oracle):**
+```
+MD5    : fcd6bcb56c1689fcef28b57c22475bad
+SHA-1  : 1adc95bebe9eea8c112d40cd04ab7a8d75c4f961
+SHA-256: de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31
+Result : SUCCESS (ewfverify exits 0)
+```
+
+**ewfinfo geometry:** 128 sectors, 512 bytes/sector, 64 KB, 2 chunks, deflate/fast compression
+
+**ewf-forensic expected behavior:**
+- 0 anomalies at any severity
+- `compute_hashes()` returns the same MD5/SHA-1/SHA-256 as above
 
 ## Required files (not committed)
 
