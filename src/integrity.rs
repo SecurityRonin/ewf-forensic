@@ -574,7 +574,16 @@ impl<'a> EwfIntegrity<'a> {
                     }
 
                     match section_type {
-                        EVF2_TYPE_MEDIA_INFO => has_media_info = true,
+                        EVF2_TYPE_MEDIA_INFO => {
+                            has_media_info = true;
+                            if let Some(body) = data.get(body_start..body_end) {
+                                if !parse_media_info_body(body) {
+                                    issues.push(EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed);
+                                }
+                            } else {
+                                issues.push(EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed);
+                            }
+                        }
                         EVF2_TYPE_CHUNK_TABLE => {
                             chunk_table_body = Some((body_start, body_end));
                         }
@@ -1081,6 +1090,35 @@ fn check_hash_all_segments(
 ///   [0..4]:   file_offset (u32 LE) — absolute position of chunk data in the file
 ///   [4..8]:   padding (u32, zero)
 ///   [8..12]:  data_size (u32 LE) — raw_sector_bytes + 4 (Adler-32 trailer)
+/// Attempt to zlib-decompress and UTF-16LE-decode a media_info section body.
+///
+/// Returns `true` if the body is a valid zlib stream that decodes as UTF-16LE
+/// (with or without BOM), `false` on any failure.  An empty body is rejected.
+fn parse_media_info_body(body: &[u8]) -> bool {
+    if body.is_empty() {
+        return false;
+    }
+    let mut decompressed = Vec::new();
+    if ZlibDecoder::new(body).read_to_end(&mut decompressed).is_err() {
+        return false;
+    }
+    // Strip BOM if present
+    let text_bytes = if decompressed.starts_with(&[0xFF, 0xFE]) {
+        &decompressed[2..]
+    } else {
+        &decompressed[..]
+    };
+    // Must be even-length for UTF-16LE
+    if text_bytes.len() % 2 != 0 {
+        return false;
+    }
+    let units: Vec<u16> = text_bytes
+        .chunks_exact(2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .collect();
+    String::from_utf16(&units).is_ok()
+}
+
 ///   [12..16]: flags (u32 LE) — bit 0: compressed (zlib); other bits: reserved
 ///
 /// On-disk chunk layout: [sector_data: raw_size bytes][adler32: 4 bytes][alignment pad]
