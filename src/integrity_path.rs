@@ -117,6 +117,47 @@ impl EwfIntegrityPath {
 
         Ok(checker.analyse())
     }
+
+    /// Memory-map every segment once and run analysis + hash computation in a
+    /// single pass, avoiding duplicate I/O compared to calling [`analyse`] and
+    /// [`compute_hashes`] separately.
+    ///
+    /// Returns `Err` if any segment file cannot be opened or mapped.
+    /// If the image is too corrupted to compute hashes, a zeroed
+    /// [`ComputedHashes`] is returned alongside the anomalies.
+    pub fn analyse_and_compute_hashes(
+        &self,
+    ) -> io::Result<(Vec<EwfIntegrityAnomaly>, ComputedHashes)> {
+        let mmaps = self
+            .segment_paths
+            .iter()
+            .map(|p| {
+                let file = File::open(p)?;
+                // SAFETY: read-only mmap of an immutable evidence file.
+                unsafe { Mmap::map(&file) }
+            })
+            .collect::<io::Result<Vec<Mmap>>>()?;
+
+        let seg_refs: Vec<&[u8]> = mmaps.iter().map(|m| m.as_ref()).collect();
+
+        let mut checker = EwfIntegrity::from_segments(&seg_refs);
+        if let Some(h) = self.expected_md5 {
+            checker = checker.with_expected_md5(h);
+        }
+        if let Some(h) = self.expected_sha1 {
+            checker = checker.with_expected_sha1(h);
+        }
+        if let Some(h) = self.expected_sha256 {
+            checker = checker.with_expected_sha256(h);
+        }
+
+        let anomalies = checker.analyse();
+        let hashes = EwfIntegrity::from_segments(&seg_refs)
+            .compute_hashes()
+            .unwrap_or(ComputedHashes { md5: [0u8; 16], sha1: [0u8; 20], sha256: [0u8; 32] });
+
+        Ok((anomalies, hashes))
+    }
 }
 
 // ── Segment auto-discovery ────────────────────────────────────────────────────
