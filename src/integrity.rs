@@ -1003,6 +1003,19 @@ fn check_table_v1(
     let entry_count = u32::from_le_bytes(tbl[0..4].try_into().unwrap());
     let base_offset = u64::from_le_bytes(tbl[8..16].try_into().unwrap());
 
+    // Table header Adler-32: covers bytes [0..16], stored at [16..20].
+    // When stored = 0 the writer chose not to include the checksum; skip check.
+    let stored_crc = u32::from_le_bytes(tbl[16..20].try_into().unwrap());
+    if stored_crc != 0 {
+        let computed_crc = adler32(&tbl[..16]);
+        if computed_crc != stored_crc {
+            issues.push(EwfIntegrityAnomaly::TableHeaderAdler32Mismatch {
+                computed: computed_crc,
+                stored: stored_crc,
+            });
+        }
+    }
+
     if let Some(vol_count) = volume_chunk_count {
         if entry_count != vol_count {
             issues.push(EwfIntegrityAnomaly::TableChunkCountMismatch {
