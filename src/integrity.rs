@@ -91,6 +91,10 @@ pub enum EwfIntegrityAnomaly {
         in_volume: u32,
         in_table: u32,
     },
+    TableHeaderAdler32Mismatch {
+        computed: u32,
+        stored: u32,
+    },
     TableEntryOutOfBounds {
         chunk_index: u32,
         entry_offset: u64,
@@ -200,6 +204,7 @@ impl EwfIntegrityAnomaly {
             Self::SectorCountMismatch { .. } => Severity::Error,
             Self::BytesPerSectorInvalid { .. } => Severity::Error,
             Self::TableChunkCountMismatch { .. } => Severity::Error,
+            Self::TableHeaderAdler32Mismatch { .. } => Severity::Error,
             Self::TableEntryOutOfBounds { .. } => Severity::Error,
             Self::TableEntryOutsideSectorsRange { .. } => Severity::Error,
             Self::SectionGapZero { .. } => Severity::Info,
@@ -252,6 +257,8 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "invalid bytes_per_sector: {bytes_per_sector} (expected 512 or 4096)"),
             Self::TableChunkCountMismatch { in_volume, in_table } =>
                 write!(f, "chunk count mismatch: volume declares {in_volume}, table has {in_table}"),
+            Self::TableHeaderAdler32Mismatch { computed, stored } =>
+                write!(f, "table header Adler-32 mismatch: computed 0x{computed:08x}, stored 0x{stored:08x}"),
             Self::TableEntryOutOfBounds { chunk_index, entry_offset, file_size } =>
                 write!(f, "table entry for chunk {chunk_index} points outside file: 0x{entry_offset:x} ≥ 0x{file_size:x}"),
             Self::TableEntryOutsideSectorsRange { chunk_index, entry_offset, sectors_start, sectors_end } =>

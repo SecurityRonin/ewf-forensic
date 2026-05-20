@@ -212,6 +212,7 @@ fn anomaly_kind(a: &EwfIntegrityAnomaly) -> &'static str {
         EwfIntegrityAnomaly::SectorCountMismatch { .. } => "SectorCountMismatch",
         EwfIntegrityAnomaly::BytesPerSectorInvalid { .. } => "BytesPerSectorInvalid",
         EwfIntegrityAnomaly::TableChunkCountMismatch { .. } => "TableChunkCountMismatch",
+        EwfIntegrityAnomaly::TableHeaderAdler32Mismatch { .. } => "TableHeaderAdler32Mismatch",
         EwfIntegrityAnomaly::TableEntryOutOfBounds { .. } => "TableEntryOutOfBounds",
         EwfIntegrityAnomaly::TableEntryOutsideSectorsRange { .. } => "TableEntryOutsideSectorsRange",
         EwfIntegrityAnomaly::SectionGapZero { .. } => "SectionGapZero",
