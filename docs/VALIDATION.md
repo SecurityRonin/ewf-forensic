@@ -8,7 +8,7 @@ Test images run automatically on every CI push via `cargo test --test real_image
 
 | Component | Version | Source |
 |-----------|---------|--------|
-| ewf-forensic | 0.4.0 | [crates.io](https://crates.io/crates/ewf-forensic) |
+| ewf-forensic | 0.4.0 (181 tests) | [crates.io](https://crates.io/crates/ewf-forensic) |
 | Rust (rustc) | 1.87.0 | [rustup.rs](https://rustup.rs/) |
 | ewfverify | 20231119 (libewf-tools) | `brew install libewf` |
 | Platform | macOS Darwin 24.6.0, arm64 (Apple Silicon) | — |
@@ -27,6 +27,12 @@ Both must agree for each hash algorithm. If they disagree, `ExternalMd5Mismatch`
 **Decompression error localisation** is verified by corrupting the DEFLATE stream of a known chunk and asserting `ChunkDecompressionError { chunk_index: 0 }` is produced with the correct index and `Error` severity.
 
 **Per-chunk Adler-32** is verified synthetically (no real uncompressed-chunk fixture is available): a builder-constructed image with a deliberately corrupted chunk checksum produces `ChunkChecksumMismatch`; a clean image does not.
+
+**EWF v2 compressed chunks** are verified using `zeros_128s_compressed.Ex01` — a Python-generated fixture validated by ewfverify (independent oracle). MD5, SHA-1, and SHA-256 computed by `compute_hashes()` match ewfverify byte-for-byte. Corrupt chunk detection is verified by flipping a byte inside the zlib stream and asserting `ChunkDecompressionError`.
+
+**EWF v2 media_info parsing** is verified by asserting `Ewf2MediaInfoParseFailed` fires when the section body is not a valid zlib stream, and does not fire for both the real fixture and a synthetically correct body.
+
+**Progress callbacks**: `analyse_with_progress(impl FnMut(AnalysisProgress))` is verified to call its callback at least once per image, report monotonically non-decreasing `chunks_done` and `bytes_done`, report `chunks_total = Some(n)` for EWF v2, and return the same anomaly set as `analyse()`.
 
 ## Test Images
 
@@ -147,6 +153,60 @@ ewfverify: SUCCESS
 
 ---
 
+### 4. zeros_128s (ewfacquirestream — EWF v2 uncompressed)
+
+| Property | Value |
+|----------|-------|
+| Tool | ewfacquirestream 20231119 (libewf-tools) |
+| Filename | `zeros_128s.Ex01` |
+| Format | EWF v2 (EnCase 7), uncompressed |
+| Media | 128 sectors × 512 bytes = 64 KB, all zeros |
+| Sectors/chunk | 64 |
+| Chunk count | 2 |
+
+**ewfverify-confirmed hashes:**
+```
+MD5    : fcd6bcb56c1689fcef28b57c22475bad
+SHA-256: de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31
+ewfverify: SUCCESS
+```
+
+**ewf-forensic result:** CLEAN (excluding expected optional-section warnings `Ewf2MediaInfoMissing`, `HashSectionMissing`).
+- MD5 and SHA-256 pinned in `ewf2_computed_md5_matches_ewfverify` / `ewf2_computed_sha256_matches_ewfverify`.
+- External MD5/SHA-1/SHA-256 mismatch detection verified by `ewf2_path_wrong_*_triggers_mismatch`.
+- Chunk table Adler-32 tampering verified by `ewf2_tampered_chunk_table_checksum_detected`.
+
+---
+
+### 5. zeros_128s_compressed (Python zlib + ewfverify — EWF v2 compressed)
+
+| Property | Value |
+|----------|-------|
+| Tool | Python `zlib.compress(level=1)` (independent of Rust's `ZlibDecoder`) + ewfverify |
+| Filename | `zeros_128s_compressed.Ex01` |
+| Format | EWF v2, zlib-compressed (chunk flags 0x03 = HAS_CHECKSUM \| IS_COMPRESSED) |
+| Media | 128 sectors × 512 bytes = 64 KB, all zeros |
+| Sectors/chunk | 64 |
+| Chunk count | 2 |
+| Chunk offsets | [464..627], [631..794] (163 bytes compressed each) |
+
+**ewfverify-confirmed hashes (independent oracle):**
+```
+MD5    : fcd6bcb56c1689fcef28b57c22475bad
+SHA-1  : 1adc95bebe9eea8c112d40cd04ab7a8d75c4f961
+SHA-256: de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31
+ewfverify: SUCCESS
+```
+
+Python's `zlib.compress()` (CPython C extension) and Rust's `flate2::ZlibDecoder` are independent implementations of RFC 1950. Agreement between ewfverify and ewf-forensic across all three hash algorithms confirms the decompression path is correct.
+
+**ewf-forensic result:** CLEAN.
+- MD5/SHA-1/SHA-256 all match ewfverify in `ewf2_compressed_compute_hashes_md5/sha1/sha256`.
+- Corrupt chunk at offset 464+10 triggers `ChunkDecompressionError` in `ewf2_corrupt_compressed_chunk_detected`.
+- External MD5 mismatch detection verified by `ewf2_compressed_path_wrong_md5_mismatch`.
+
+---
+
 ## Decompression Error Localisation
 
 `ChunkDecompressionError { chunk_index }` fires when a compressed chunk's zlib stream cannot be decoded. Without this anomaly, a corrupt chunk produces only `HashMismatch` with no indication of which chunk caused it. ewfverify reports the failing chunk; ewf-forensic now does too.
@@ -208,11 +268,15 @@ cargo test
 ewfverify -q tests/fixtures/exfat1.E01
 ewfverify -q tests/fixtures/nps-2010-emails.E01
 ewfverify -q tests/fixtures/imageformat_mmls_1.E01
+ewfverify -q tests/fixtures/zeros_128s.Ex01
+ewfverify -q tests/fixtures/zeros_128s_compressed.Ex01
 
 # SHA-256 (computed over data; not stored in these images):
 ewfverify -d sha256 tests/fixtures/exfat1.E01
 ewfverify -d sha256 tests/fixtures/nps-2010-emails.E01
 ewfverify -d sha256 tests/fixtures/imageformat_mmls_1.E01
+ewfverify -d sha256 -d sha1 tests/fixtures/zeros_128s.Ex01
+ewfverify -d sha256 -d sha1 tests/fixtures/zeros_128s_compressed.Ex01
 ```
 
 ### Download and verify fixtures from source
@@ -235,14 +299,17 @@ md5 imageformat_mmls_1.E01  # expect bb6c6bec25d589e87a11af9129275cc9
 
 | Image | Format | Media size | Chunks | MD5 | SHA-1 | SHA-256 | Tamper | Decomp error |
 |-------|--------|-----------|--------|-----|-------|---------|--------|--------------|
-| exfat1 | EnCase 6, compressed | 95 MiB | 3,053 | ewfverify match | N/A (not stored) | ewfverify match | Detected | Localised (chunk 0) |
-| nps-2010-emails | EnCase 6, compressed | 10 MiB | 320 | ewfverify match | N/A (not stored) | ewfverify match | Detected | — |
+| exfat1 | EnCase 6, compressed | 95 MiB | 3,053 | ewfverify match | N/A | ewfverify match | Detected | Localised (chunk 0) |
+| nps-2010-emails | EnCase 6, compressed | 10 MiB | 320 | ewfverify match | N/A | ewfverify match | Detected | — |
 | imageformat_mmls_1 | FTK Imager, compressed | 60 MiB | 1,921 | ewfverify match | ewfverify match | ewfverify match | — | — |
+| zeros_128s | EWF v2 uncompressed | 64 KB | 2 | ewfverify match | N/A | ewfverify match | — | — |
+| zeros_128s_compressed | EWF v2 zlib (Python oracle) | 64 KB | 2 | ewfverify match | ewfverify match | ewfverify match | — | Localised (chunk 0) |
 
-All three images pass with zero Error/Critical findings. MD5, SHA-1 (where stored), and SHA-256 match ewfverify byte-for-byte. Tamper detection and decompression error localisation are verified by targeted byte-flip mutation tests.
+All five images pass with zero Error/Critical findings. MD5, SHA-1 (where stored), and SHA-256 match ewfverify byte-for-byte. Tamper detection and decompression error localisation are verified by targeted byte-flip mutation tests.
 
 ## Known Limitations
 
-- All three fixtures use compressed chunks exclusively. The uncompressed-chunk Adler-32 path (`ChunkChecksumMismatch`) is covered only by synthetic tests; no real uncompressed-chunk fixture is available in the public corpus.
-- Multi-segment images (E01+E02+…) are covered by synthetic builder tests; no real multi-segment fixture is committed.
-- EWF v2 (Ex01) format coverage is structural only (section descriptor hashes, media info, encryption flags); no sector-data hash verification is implemented for EWF v2.
+- All EWF v1 fixtures use compressed chunks exclusively. The uncompressed-chunk Adler-32 path (`ChunkChecksumMismatch`) is covered only by synthetic builder tests; no real uncompressed-chunk fixture is available in the public corpus.
+- Multi-segment images (E01+E02+…) are covered by synthetic builder tests and the Ex-prefix sibling-discovery bug fix; no real multi-segment fixture is committed.
+- EWF v2 progress reporting sets `chunks_total = None` for EWF v1 (chunk count is not known ahead of the verification loop); `chunks_total = Some(n)` is available for EWF v2 only.
+- The `zeros_128s_compressed.Ex01` fixture is Python-generated (not acquired by a commercial tool). It passes ewfverify but may not expose tool-specific quirks in the EWF v2 writer.
