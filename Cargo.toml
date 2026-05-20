@@ -41,3 +41,4 @@ hex = "0.4"
 serde_json = "1"
 # Oracle for doer-checker TDD: blazehash independently computes expected hashes
 blazehash = { path = "../blazehash", default-features = false }
+proptest = "1"
