@@ -122,6 +122,11 @@ pub enum EwfIntegrityAnomaly {
         stored: [u8; 16],
     },
     HashSectionMissing,
+    /// The `error2` section records acquisition errors (unreadable sectors).
+    BadSectorsPresent {
+        /// Number of error entries in the `error2` section.
+        count: u32,
+    },
     // ── Multi-segment ─────────────────────────────────────────────────────────
     /// Segment number does not match the expected sequential position.
     SegmentOutOfOrder {
@@ -224,6 +229,7 @@ impl EwfIntegrityAnomaly {
             Self::SectionGapZero { .. } => Severity::Info,
             Self::HashMismatch { .. } => Severity::Error,
             Self::HashSectionMissing => Severity::Warning,
+            Self::BadSectorsPresent { .. } => Severity::Warning,
             Self::SegmentOutOfOrder { .. } => Severity::Error,
             Self::DigestSha1Mismatch { .. } => Severity::Error,
             Self::DigestSha256Mismatch { .. } => Severity::Error,
@@ -288,6 +294,8 @@ impl fmt::Display for EwfIntegrityAnomaly {
                 write!(f, "MD5 mismatch: computed {}, stored {}", hex(computed), hex(stored)),
             Self::HashSectionMissing =>
                 write!(f, "hash section missing — cannot verify MD5"),
+            Self::BadSectorsPresent { count } =>
+                write!(f, "error2 section reports {count} unreadable sector range(s) from acquisition"),
             Self::SegmentOutOfOrder { segment_number, expected } =>
                 write!(f, "segment {segment_number} found where segment {expected} was expected"),
             Self::DigestSha1Mismatch { computed, stored } =>
@@ -545,6 +553,17 @@ impl<'a> EwfIntegrity<'a> {
                 );
             } else {
                 issues.push(EwfIntegrityAnomaly::TableSectionMissing);
+            }
+
+            // error2 section: parse entry_count, warn if any unreadable sectors.
+            if let Some(e2) = sections.iter().find(|s| s.type_name == "error2") {
+                let body_start = (e2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                if body_start + 4 <= data.len() {
+                    let count = u32::from_le_bytes(data[body_start..body_start + 4].try_into().unwrap());
+                    if count > 0 {
+                        issues.push(EwfIntegrityAnomaly::BadSectorsPresent { count });
+                    }
+                }
             }
 
             // Done section expected only in the last segment
@@ -825,6 +844,15 @@ impl<'a> EwfIntegrity<'a> {
                 check_table_v1(data, table.offset, vol_count, file_size, sectors_range, &mut issues);
             } else {
                 issues.push(EwfIntegrityAnomaly::TableSectionMissing);
+            }
+            if let Some(e2) = sections.iter().find(|s| s.type_name == "error2") {
+                let body_start = (e2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                if body_start + 4 <= data.len() {
+                    let count = u32::from_le_bytes(data[body_start..body_start + 4].try_into().unwrap());
+                    if count > 0 {
+                        issues.push(EwfIntegrityAnomaly::BadSectorsPresent { count });
+                    }
+                }
             }
             if is_last && !sections.iter().any(|s| s.type_name == "done") {
                 issues.push(EwfIntegrityAnomaly::DoneSectionMissing);
