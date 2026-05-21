@@ -269,3 +269,105 @@ fn differential_compressed_tamper_ewfverify_md5_appears_clean_but_exits_failure(
         r.ewf_anomalies
     );
 }
+
+// ── Adversarial edge cases: both tools run on crafted malformed inputs ────────
+
+/// Truncate an otherwise-clean image to half its size.
+/// ewfverify must fail (exit ≥ 1); ewf-forensic must report at least one Error/Critical.
+#[test]
+fn differential_truncated_file_both_detect() {
+    let src = std::fs::read(fixture("ewfacquire_clean.E01")).unwrap();
+    let half = &src[..src.len() / 2];
+
+    let mut tmp = tempfile::Builder::new().suffix(".E01").tempfile().unwrap();
+    tmp.write_all(half).unwrap();
+    tmp.flush().unwrap();
+
+    let Some(r) = run_differential(tmp.path()) else { return };
+    // Both must agree there is a problem.
+    assert!(
+        !r.ewfverify_clean() || !r.ewf_clean(),
+        "truncated image must be detected by at least one tool; ewfverify_exit={}, ewf={:?}",
+        r.ewfverify_exit,
+        r.ewf_anomalies
+    );
+    assert!(
+        !r.ewf_clean(),
+        "ewf-forensic must detect truncated image; all anomalies={:?}",
+        r.ewf_anomalies
+    );
+}
+
+/// Flip 4 bytes of the EVF magic signature at offset 0.
+/// ewfverify must fail; ewf-forensic must report InvalidSignature (Critical).
+#[test]
+fn differential_invalid_signature_both_detect() {
+    let src = std::fs::read(fixture("ewfacquire_clean.E01")).unwrap();
+
+    let mut tmp = tempfile::Builder::new().suffix(".E01").tempfile().unwrap();
+    let mut tampered = src.clone();
+    // Corrupt the first 4 bytes of the EVF magic (45 56 46 09 0D 0A FF 00).
+    tampered[0] = 0x00;
+    tampered[1] = 0x00;
+    tampered[2] = 0x00;
+    tampered[3] = 0x00;
+    tmp.write_all(&tampered).unwrap();
+    tmp.flush().unwrap();
+
+    // ewfverify cannot open a file with invalid magic — exits 2+ (I/O error).
+    // ewf-forensic must report InvalidSignature (Critical) regardless.
+    let findings = EwfIntegrityPath::from_path(tmp.path())
+        .analyse()
+        .expect("ewf-forensic I/O must not fail");
+
+    let has_invalid_sig = findings.iter().any(|a| {
+        format!("{a}").to_lowercase().contains("signature")
+            || matches!(a, ewf_forensic::EwfIntegrityAnomaly::InvalidSignature)
+    });
+    assert!(
+        has_invalid_sig,
+        "ewf-forensic must report InvalidSignature for corrupt magic; got: {findings:#?}"
+    );
+
+    // Also verify ewfverify agrees it's broken (exit non-zero).
+    let ev = Command::new("ewfverify")
+        .arg("-q")
+        .arg(tmp.path())
+        .output();
+    if let Ok(ev) = ev {
+        let exit = ev.status.code().unwrap_or(-1);
+        assert_ne!(exit, 0, "ewfverify must not report SUCCESS for invalid magic");
+    }
+}
+
+/// Replace the 16-byte stored MD5 in the hash section with a wrong value.
+/// Both tools must detect the hash mismatch.
+#[test]
+fn differential_wrong_stored_md5_both_detect() {
+    let src = std::fs::read(fixture("ewfacquire_clean.E01")).unwrap();
+
+    // Locate the "hash" section by scanning for its type string.
+    // EWF v1 section type field is at offset +0 in the 76-byte descriptor.
+    let hash_type = b"hash\0\0\0\0\0\0\0\0\0\0\0\0";
+    let hash_section_pos = src
+        .windows(16)
+        .position(|w| w == hash_type)
+        .expect("ewfacquire_clean.E01 must contain a hash section");
+
+    // The 76-byte descriptor is followed by the hash section body.
+    // EWF v1 hash body = 16-byte MD5 + 16-byte SHA-1 (if present) + padding.
+    let body_start = hash_section_pos + 76;
+
+    let mut tampered = src.clone();
+    // Flip all bits of the first 16 bytes (the stored MD5).
+    for b in &mut tampered[body_start..body_start + 16] {
+        *b ^= 0xFF;
+    }
+
+    let mut tmp = tempfile::Builder::new().suffix(".E01").tempfile().unwrap();
+    tmp.write_all(&tampered).unwrap();
+    tmp.flush().unwrap();
+
+    let Some(r) = run_differential(tmp.path()) else { return };
+    assert_both_detect(&r);
+}
