@@ -8,7 +8,7 @@ Test images run automatically on every CI push via `cargo test --test real_image
 
 | Component | Version | Source |
 |-----------|---------|--------|
-| ewf-forensic | 0.4.0 (250 tests) | [crates.io](https://crates.io/crates/ewf-forensic) |
+| ewf-forensic | 0.4.0 (253 tests) | [crates.io](https://crates.io/crates/ewf-forensic) |
 | Rust (rustc) | 1.87.0 | [rustup.rs](https://rustup.rs/) |
 | ewfverify | 20231119 (libewf-tools) | `brew install libewf` |
 | Platform | macOS Darwin 24.6.0, arm64 (Apple Silicon) | — |
@@ -357,6 +357,54 @@ Download: `https://raw.githubusercontent.com/HaxonicOfficial/CTF-Practice/master
 
 ---
 
+### 11. gpt_130_partitions (sleuthkit test data)
+
+| Property | Value |
+|----------|-------|
+| Source | [github.com/sleuthkit/sleuthkit](https://github.com/sleuthkit/sleuthkit/tree/develop/test/data) |
+| Filename | `gpt_130_partitions.E01` |
+| Format | EWF v1 |
+| Size on disk | 384 KB |
+| Content | GPT partition table with 130 partitions |
+
+A structurally valid EWF v1 image from the sleuthkit test corpus; used upstream to exercise GPT partition-table parsing. For ewf-forensic it provides a clean-container baseline from a third corpus.
+
+**ewfverify output:**
+```
+MD5 hash stored in file:       5dbf6daf7b9aa7daabbc05024e562a88
+MD5 hash calculated over data: 5dbf6daf7b9aa7daabbc05024e562a88
+ewfverify: SUCCESS (exit 0)
+```
+
+**ewf-forensic result:** CLEAN — 0 anomalies at any severity.
+- Agreement with ewfverify verified in `gpt_130_partitions_both_clean` (`tests/sleuthkit_fixture_tests.rs`).
+
+---
+
+### 12. bogus.E01 / bogus.E02 (sleuthkit test data — zero-byte inputs)
+
+| Property | Value |
+|----------|-------|
+| Source | [github.com/sleuthkit/sleuthkit](https://github.com/sleuthkit/sleuthkit/tree/develop/test/data) |
+| Filenames | `bogus.E01`, `bogus.E02` |
+| Size | 0 bytes each |
+| Content | Intentionally empty |
+
+Both files are zero bytes. The sleuthkit test suite ships them to exercise error paths in EWF-opening tools. `bogus.E02` uses the continuation-segment extension, forming a notional 2-file multi-segment set where both segments are empty.
+
+Both tools correctly reject them — the verdict agrees. The diagnostic depth differs:
+
+| | ewfverify | ewf-forensic |
+|---|---|---|
+| Exit | non-zero (1) | non-zero (1) |
+| Output | "unable to read file header signature at offset 0" | `[CRITICAL] section chain broken at 0x0` × 2 |
+
+ewf-forensic opens the file and traverses the section chain before reporting a CRITICAL anomaly with the specific structural invariant violated. ewfverify's failure is a libewf open error with no structured output. This is not a divergence in verdict — both agree the files are invalid.
+
+**Tests:** `bogus_e01_both_report_invalid`, `bogus_e02_both_report_invalid` (`tests/sleuthkit_fixture_tests.rs`).
+
+---
+
 ## Differential Testing
 
 `tests/differential_tests.rs` and `tests/ctf_fixture_tests.rs` run ewf-forensic and ewfverify side-by-side on the same input and compare results. Tests skip automatically if ewfverify is not installed.
@@ -370,18 +418,19 @@ Download: `https://raw.githubusercontent.com/HaxonicOfficial/CTF-Practice/master
 | Characterisation difference | Both agree the image has an issue but describe it differently |
 | Coverage difference | Tools check different things; each is internally consistent; one surfaces an anomaly the other does not |
 
-**Results across 10 committed fixtures + 3 public-corpus inputs (13 real EWF images):**
+**Results across 13 committed fixtures + 2 public-corpus inputs (15 real EWF images):**
 
 | Category | Count |
 |----------|-------|
-| Agreement: both clean | 9 |
+| Agreement: both clean | 10 |
 | Agreement: both detect anomaly | 2 |
+| Agreement: both reject (structurally invalid input) | 2 (bogus.E01, bogus.E02) |
 | Characterisation difference | 1 (D1 — compressed chunk tamper) |
 | Coverage difference | 2 (D2 — error2 section; D3 — table/volume mismatch) |
 | True false positive in ewf-forensic | 0 |
 | True false negative in ewf-forensic | 0 |
 
-**ewf-forensic reported no false positives and no false negatives across any image tested.** The two coverage differences (D2, D3) reflect ewf-forensic checking more of the image structure than ewfverify does, not errors in either tool.
+**ewf-forensic reported no false positives and no false negatives across any image tested.** The two coverage differences (D2, D3) reflect ewf-forensic checking more of the image structure than ewfverify does, not errors in either tool. The diagnostic difference on the bogus inputs (ewfverify: open error; ewf-forensic: structured CRITICAL anomaly) is a depth difference, not a verdict difference.
 
 ### Divergence Catalogue
 
@@ -461,6 +510,12 @@ cargo test --test real_image_tests
 cargo test --test chunk_integrity_tests
 ```
 
+### Run sleuthkit fixture tests
+
+```bash
+cargo test --test sleuthkit_fixture_tests
+```
+
 ### Run differential tests (ewf-forensic vs ewfverify)
 
 Requires `ewfverify` installed (`brew install libewf`). Tests skip automatically if not present.
@@ -513,6 +568,11 @@ ewfverify -d sha256 -d sha1 tests/data/zeros_128s_compressed.Ex01
 ```bash
 # Both clean (no divergence):
 ewfverify -q tests/data/ctf_file6.E01
+ewfverify -q tests/data/gpt_130_partitions.E01
+
+# Both reject — structurally invalid (0-byte files):
+ewfverify -q tests/data/bogus.E01   # exits 1: "unable to read file header signature"
+cargo run --bin ewf-check -- tests/data/bogus.E01  # exits 1: [CRITICAL] section chain broken
 
 # Characterisation gap D2: ewfverify ignores error2 → SUCCESS; ewf-forensic → BadSectorsPresent:
 ewfverify -q tests/data/2011-10-19-Sample.E01
@@ -553,8 +613,11 @@ md5 imageformat_mmls_1.E01  # expect bb6c6bec25d589e87a11af9129275cc9
 | zeros_128s | EWF v2 uncompressed | 1 | 64 KB | ewfverify match | N/A | ewfverify match | — | — |
 | zeros_128s_compressed | EWF v2 zlib (Python oracle) | 1 | 64 KB | ewfverify match | ewfverify match | ewfverify match | — | Localised (chunk 0) |
 | ctf_file6 | EWF v1, compressed | 1 | — | ewfverify match | ewfverify match | N/A | — | — |
+| gpt_130_partitions | EWF v1 | 1 | 384 KB | ewfverify match | N/A | N/A | — | — |
+| bogus.E01 | — (0 bytes) | — | 0 B | Invalid — ewfverify rejects | N/A | N/A | — | — |
+| bogus.E02 | — (0 bytes) | — | 0 B | Invalid — ewfverify rejects | N/A | N/A | — | — |
 
-All eight always-on images pass with zero Error/Critical findings. MD5, SHA-1 (where stored), and SHA-256 match ewfverify byte-for-byte. Tamper detection and decompression error localisation are verified by targeted byte-flip mutation tests.
+All 11 always-on committed images produce zero Error/Critical findings (bogus.E01/E02 produce CRITICAL by design — their rejection is the correct result). MD5, SHA-1 (where stored), and SHA-256 match ewfverify byte-for-byte on all valid images. MD5, SHA-1 (where stored), and SHA-256 match ewfverify byte-for-byte. Tamper detection and decompression error localisation are verified by targeted byte-flip mutation tests.
 
 ### CTF fixtures (ignored — download required)
 
