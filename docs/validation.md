@@ -290,6 +290,8 @@ ewfverify: SUCCESS (exit 0)
 | Size | 60 MB |
 | Content | Autopsy sample case "Victor Bushell Laptop" |
 
+This is a structurally valid forensic acquisition image, not a malformed or adversarial input. It was selected because it contains an `error2` section recording acquisition-time bad sectors — a legitimate EWF feature that exposes a coverage gap in ewfverify.
+
 **ewfverify output:**
 ```
 ewfverify: SUCCESS (exit 0)
@@ -304,7 +306,7 @@ ewfverify: SUCCESS (exit 0)
 
 ewfverify ignores the `error2` section entirely. When an acquisition tool records unreadable sectors in `error2`, ewfverify silently skips them and reports SUCCESS. ewf-forensic reads the `error2` section and surfaces `BadSectorsPresent` (Warning) — the sectors were unreadable at acquisition time.
 
-ewf-forensic is more informative: the warning is accurate and the investigator should know that some sector ranges could not be read at acquisition time. Both tools agree there is no hash mismatch or structural damage; they disagree on whether acquisition-time sector errors are worth reporting.
+Both tools agree there is no hash mismatch or structural damage. They differ only on whether acquisition-time sector errors are worth surfacing: ewf-forensic does; ewfverify does not.
 
 Test: `ctf_autopsy_sample_ewfverify_misses_bad_sectors` (`#[ignore]`, `tests/ctf_fixture_tests.rs`).
 Download: `https://raw.githubusercontent.com/oddin-forensic/autopsy-sample-case/master/2011-10-19-Sample.E01`
@@ -338,15 +340,17 @@ ewfverify: SUCCESS (exit 0)
 [ERROR]  SHA-1 mismatch: computed cd6a6169873477274eabf3e569a49650db3456a1, stored da9d570...
 ```
 
-**ewfverify false negative — critical finding:**
+**Measured structural inconsistency — origin unverified:**
 
-The volume section declares 61 440 chunks (~1.8 GiB of sector data). The table section indexes only 16 375 entries (~511 MB). The remaining ~1.3 GiB of declared media has no accessible chunk offsets.
+The volume section declares 61 440 chunks (~1.8 GiB of sector data). The table section indexes only 16 375 entries (~511 MB). The cause of this mismatch is not known: the file could be a partial/truncated acquisition, a file truncated by GitHub's size limits when committed, a tool bug in the acquiring FTK Imager version, or an intentionally crafted CTF challenge. No original challenge description or acquisition report was found to confirm intent.
 
-ewfverify hashes only the table-accessible sectors. The stored MD5 was computed over the same 16 375 accessible sectors at acquisition time, so ewfverify's computed hash matches the stored hash and it exits SUCCESS — despite the image being structurally inconsistent with a 1.3 GiB gap between declared and accessible data.
+What is confirmed by measurement:
+- The structural inconsistency exists and is reproducible
+- ewfverify hashes only table-accessible sectors; the stored MD5 matches those sectors → exits SUCCESS
+- ewf-forensic reports `TableChunkCountMismatch` as an Error and surfaces the mismatch explicitly
+- An investigator using ewfverify alone would receive no indication that the volume header and table disagree
 
-ewf-forensic detects `TableChunkCountMismatch` (volume ≠ table entry count) as an Error, then hashes over the full declared sector range. Because it accounts for all 61 440 declared chunks, its computed MD5 differs from the stored value → `HashMismatch`. This is correct behaviour: the structural inconsistency is a real integrity problem.
-
-**This is a genuine false negative in ewfverify.** An investigator who relies solely on ewfverify would not know that 1.3 GiB of declared media is structurally inaccessible.
+Whether ewfverify's behaviour is a "false negative" depends on interpretation: ewfverify reports on what it can access and finds it consistent; ewf-forensic treats the volume/table discrepancy as an integrity problem regardless of whether the accessible data hashes correctly. Both positions are defensible; the difference is in what each tool considers in scope.
 
 Test: `ctf_cnc_ewfverify_false_negative_table_mismatch` (`#[ignore]`, `tests/ctf_fixture_tests.rs`).
 Download: `https://raw.githubusercontent.com/HaxonicOfficial/CTF-Practice/master/CNC.E01`
@@ -363,21 +367,21 @@ Download: `https://raw.githubusercontent.com/HaxonicOfficial/CTF-Practice/master
 |------|-----------|
 | False positive | ewfverify exits 0 (SUCCESS) but ewf-forensic reports Error/Critical |
 | False negative | ewfverify exits ≠ 0 (FAILURE) but ewf-forensic reports nothing |
-| Characterisation difference | Both agree the image has an issue but characterise it differently |
-| ewfverify false negative | ewfverify exits 0 on a structurally inconsistent image; ewf-forensic reports Error |
+| Characterisation difference | Both agree the image has an issue but describe it differently |
+| Coverage difference | Tools check different things; each is internally consistent; one surfaces an anomaly the other does not |
 
-**Results across 10 committed fixtures + 3 CTF inputs (13 real EWF images):**
+**Results across 10 committed fixtures + 3 public-corpus inputs (13 real EWF images):**
 
 | Category | Count |
 |----------|-------|
 | Agreement: both clean | 9 |
 | Agreement: both detect anomaly | 2 |
-| Characterisation difference | 1 |
-| ewfverify false negative | 1 |
+| Characterisation difference | 1 (D1 — compressed chunk tamper) |
+| Coverage difference | 2 (D2 — error2 section; D3 — table/volume mismatch) |
 | True false positive in ewf-forensic | 0 |
 | True false negative in ewf-forensic | 0 |
 
-**No false positives and no false negatives were found in ewf-forensic across any real image tested.**
+**ewf-forensic reported no false positives and no false negatives across any image tested.** The two coverage differences (D2, D3) reflect ewf-forensic checking more of the image structure than ewfverify does, not errors in either tool.
 
 ### Divergence Catalogue
 
@@ -397,12 +401,13 @@ Download: `https://raw.githubusercontent.com/HaxonicOfficial/CTF-Practice/master
 **Classification:** ewfverify characterisation gap — the image has a valid `error2` section recording 1 acquisition-time bad sector range. ewfverify does not check `error2`. ewf-forensic is more informative; this is not a false positive.
 **Test:** `ctf_autopsy_sample_ewfverify_misses_bad_sectors` (`#[ignore]`).
 
-#### D3 — CNC: ewfverify false negative on partial/truncated image
+#### D3 — CNC: ewfverify does not report volume/table mismatch
 
-**Image:** CNC.E01 (88 MB, declares 1.8 GiB).
-**ewfverify:** exits 0 (SUCCESS) — hashes only table-accessible sectors; stored hash matches.
+**Image:** CNC.E01 (88 MB on disk, volume section declares 1.8 GiB).
+**ewfverify:** exits 0 (SUCCESS) — hashes only table-accessible sectors; stored MD5 matches.
 **ewf-forensic:** exits 1, reports `TableChunkCountMismatch` + `HashMismatch` + `DigestSha1Mismatch` (all Error).
-**Classification:** ewfverify false negative — the structural inconsistency (61 440 declared vs 16 375 accessible chunks) is not caught. ewf-forensic detects it. This is the most significant divergence found: a forensic investigator relying solely on ewfverify would not know that ~1.3 GiB of declared media is inaccessible.
+**Origin of mismatch:** unverified — truncated file, GitHub size limit, tool bug, or intentional CTF design are all plausible.
+**Classification:** coverage difference — ewfverify checks that accessible sector data matches the stored hash (it does); ewf-forensic additionally checks that the table entry count matches the volume declaration (it does not). The divergence is real and reproducible; which tool's behaviour is "correct" depends on whether a volume/table discrepancy is considered an integrity problem.
 **Test:** `ctf_cnc_ewfverify_false_negative_table_mismatch` (`#[ignore]`).
 
 ---
@@ -555,8 +560,8 @@ All eight always-on images pass with zero Error/Critical findings. MD5, SHA-1 (w
 
 | Image | Divergence | ewfverify | ewf-forensic |
 |-------|-----------|-----------|--------------|
-| 2011-10-19-Sample.E01 | D2 — characterisation gap | SUCCESS (ignores error2) | BadSectorsPresent (Warning) |
-| CNC.E01 | D3 — ewfverify false negative | SUCCESS (partial image) | TableChunkCountMismatch + HashMismatch (Error) |
+| 2011-10-19-Sample.E01 | D2 — coverage difference (error2) | SUCCESS | BadSectorsPresent (Warning) |
+| CNC.E01 | D3 — coverage difference (table/volume) | SUCCESS | TableChunkCountMismatch + HashMismatch (Error) |
 
 **No false positives and no false negatives were found in ewf-forensic across any real image tested.**
 

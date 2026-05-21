@@ -180,20 +180,18 @@ fn ctf_autopsy_sample_ewfverify_misses_bad_sectors() {
 /// CNC.E01 — HaxonicOfficial CTF Practice image (88 MB, FTK Imager).
 /// Source: github.com/HaxonicOfficial/CTF-Practice
 ///
-/// Critical false negative in ewfverify: this image declares 61 440 chunks in the
-/// volume section but the table section only indexes 16 375 chunks (~511 MB of
-/// accessible sectors out of a declared 1.8 GiB media). ewfverify silently hashes
-/// only the table-accessible sectors and the stored MD5 matches those sectors,
-/// so ewfverify exits 0 (SUCCESS).
+/// Coverage difference (D3): the volume section declares 61 440 chunks (~1.8 GiB)
+/// but the table section indexes only 16 375 chunks (~511 MB accessible). The
+/// origin of the mismatch is unverified — truncated acquisition, GitHub size
+/// limit, tool bug, or intentional CTF design are all plausible.
 ///
-/// ewf-forensic correctly detects:
+/// ewfverify hashes only table-accessible sectors; the stored MD5 matches those
+/// sectors → exits SUCCESS. It does not check whether volume and table agree.
+///
+/// ewf-forensic detects:
 ///   TableChunkCountMismatch { in_volume: 61440, in_table: 16375 }   [Error]
 ///   HashMismatch (computed over full declared range)                 [Error]
 ///   DigestSha1Mismatch                                               [Error]
-///
-/// The partial image is structurally inconsistent. ewfverify is wrong to report
-/// SUCCESS. This is a genuine false negative in ewfverify, not a false positive
-/// in ewf-forensic.
 ///
 /// Run: cargo test --test ctf_fixture_tests ctf_cnc -- --ignored
 #[test]
@@ -213,10 +211,10 @@ fn ctf_cnc_ewfverify_false_negative_table_mismatch() {
 
     let Some(r) = run_differential(&path) else { return };
 
-    // ewfverify false negative: reports SUCCESS on a structurally inconsistent image.
+    // ewfverify does not check table/volume consistency — reports SUCCESS.
     assert!(
         r.ewfverify_clean(),
-        "ewfverify characterisation changed: expected false-negative SUCCESS; exit={}; output={}",
+        "ewfverify behaviour changed: expected SUCCESS; exit={}; output={}",
         r.ewfverify_exit,
         r.ewfverify_output
     );
