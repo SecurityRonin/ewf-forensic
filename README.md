@@ -308,7 +308,7 @@ ewf-check --hash-md5=2692f3177a389e58906b5c9080aa1add evidence.E01
 - **File-based API uses memory-mapped I/O** — `EwfIntegrityPath` mmaps each segment rather than reading it into a `Vec<u8>`. Large images (100 GB+) do not require 100 GB of RAM.
 - **No unsafe code in ewf-forensic** — the crate itself contains no `unsafe` blocks. `memmap2` wraps the OS mmap syscall but its unsafety is isolated to that dependency.
 - **No panics on adversarial input** — every parser path is bounded; cycle attacks and integer overflows are explicitly handled. Verified by libfuzzer (4.5 M iterations, zero crashes) and proptest (property-based, runs in `cargo test`).
-- **Validated against real acquisitions** — seven real-tool fixtures across EWF v1 and EWF v2, all confirmed clean by `ewfverify`. See [docs/VALIDATION.md](docs/VALIDATION.md) for image sources and reproduction steps.
+- **Validated against real acquisitions** — seven real-tool fixtures across EWF v1 and EWF v2, all confirmed clean by `ewfverify`. See [docs/validation.md](docs/validation.md) for image sources and reproduction steps.
 - **MSRV 1.85** — no nightly, no unstable features.
 
 ---
