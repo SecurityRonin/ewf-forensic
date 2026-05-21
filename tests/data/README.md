@@ -21,6 +21,9 @@ cargo test --test tool_fixtures_tests -- --ignored
 | `imageformat_mmls_1.E01` | EWF v1, compressed | 405 KiB | FTK Imager (DFTT corpus) |
 | `nps-2010-emails.E01` | EWF v1 (EnCase 6), compressed | 507 KiB | EnCase (NPS corpus) |
 | `ctf_file6.E01` | EWF v1, compressed | 156 KiB | CTF — github.com/mfput/CTF-Questions |
+| `bogus.E01` | — (0 bytes, invalid) | 0 B | sleuthkit test/data — empty file for error-path testing |
+| `bogus.E02` | — (0 bytes, invalid) | 0 B | sleuthkit test/data — empty continuation segment pair |
+| `gpt_130_partitions.E01` | EWF v1 | 384 KiB | sleuthkit test/data — GPT image with 130 partitions |
 
 ### zeros_128s.Ex01
 
@@ -110,6 +113,50 @@ ewfacquire: SUCCESS
 ```
 
 **ewf-forensic expected behavior:**
+- 0 anomalies at any severity
+
+---
+
+### bogus.E01 / bogus.E02 (sleuthkit test data)
+
+Source: [github.com/sleuthkit/sleuthkit](https://github.com/sleuthkit/sleuthkit/tree/develop/test/data)
+
+Both files are intentionally **0 bytes**.  The sleuthkit test suite ships them to
+exercise error-path handling in tools that open EWF files — the simplest possible
+invalid input.  `bogus.E02` uses the continuation-segment extension, forming a
+notional 2-file multi-segment set where both segments are empty.
+
+**Both tools reject the files, but in different ways:**
+
+| | ewfverify | ewf-forensic |
+|---|---|---|
+| Exit | non-zero (1) | non-zero (1) |
+| Output | "unable to read file header signature at offset 0" | `[CRITICAL] section chain broken at 0x0: next pointer 0x0 is invalid` × 2 |
+| Verdict | rejects at open | opens file, traverses chain, emits structured CRITICAL |
+
+**ewf-forensic provides more diagnostic information** — the CRITICAL anomaly names the
+specific structural invariant violated; ewfverify's failure is a libewf open error with
+no structured output.  This is not a divergence in verdict — both agree the file is
+invalid.
+
+---
+
+### gpt_130_partitions.E01 (sleuthkit test data)
+
+Source: [github.com/sleuthkit/sleuthkit](https://github.com/sleuthkit/sleuthkit/tree/develop/test/data)
+
+A structurally valid EWF v1 image containing a GPT partition table with 130 partitions.
+Used in the sleuthkit suite for partition-table parsing coverage; for ewf-forensic it is
+a clean-container integrity baseline.
+
+**ewfverify-confirmed:**
+```
+MD5 hash stored in file:       5dbf6daf7b9aa7daabbc05024e562a88
+MD5 hash calculated over data: 5dbf6daf7b9aa7daabbc05024e562a88
+ewfverify: SUCCESS (exit 0)
+```
+
+**ewf-forensic expected behaviour:**
 - 0 anomalies at any severity
 
 ---
