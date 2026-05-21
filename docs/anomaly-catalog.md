@@ -280,9 +280,9 @@ The hash now verifies correctly — `HashMismatch` is not reported. ewf-forensic
 
 ---
 
-### Single-segment scope
+### EWF v2 encrypted sections cannot be verified
 
-ewf-forensic analyses one segment file at a time. Multi-segment acquisitions (`.E01`, `.E02`, `.E03` …) require each segment to be validated independently. The library does not check cross-segment consistency: a table in `.E01` pointing into `.E02` cannot be validated here.
+When `Ewf2EncryptedSection` is reported, the section body is skipped entirely. Content inside an encrypted section cannot be integrity-checked. If every data section is encrypted, the structural checks still run but hash verification is not possible.
 
 ---
 

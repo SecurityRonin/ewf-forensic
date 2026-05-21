@@ -1,6 +1,6 @@
 # Validation Report
 
-Integrity analysis of ewf-forensic against three publicly available E01 forensic images committed to `tests/fixtures/`. Every claim here is reproducible from the test suite.
+Integrity analysis of ewf-forensic against three publicly available E01 forensic images committed to `tests/data/`. Every claim here is reproducible from the test suite.
 
 Test images run automatically on every CI push via `cargo test --test real_image_tests`.
 
@@ -8,7 +8,7 @@ Test images run automatically on every CI push via `cargo test --test real_image
 
 | Component | Version | Source |
 |-----------|---------|--------|
-| ewf-forensic | 0.4.0 (181 tests) | [crates.io](https://crates.io/crates/ewf-forensic) |
+| ewf-forensic | 0.4.0 (236 tests) | [crates.io](https://crates.io/crates/ewf-forensic) |
 | Rust (rustc) | 1.87.0 | [rustup.rs](https://rustup.rs/) |
 | ewfverify | 20231119 (libewf-tools) | `brew install libewf` |
 | Platform | macOS Darwin 24.6.0, arm64 (Apple Silicon) | — |
@@ -153,7 +153,58 @@ ewfverify: SUCCESS
 
 ---
 
-### 4. zeros_128s (ewfacquirestream — EWF v2 uncompressed)
+### 4. multiseg_v1 (ewfacquire — EWF v1 8-segment)
+
+| Property | Value |
+|----------|-------|
+| Tool | ewfacquire 20231119 (libewf-tools) |
+| Filename | `multiseg_v1.E01` … `multiseg_v1.E08` |
+| Format | EWF v1 (EnCase 6), no compression, 1.5 MiB segment limit |
+| Source | 10 MiB of `/dev/urandom` |
+| Segments | 8 (7 × 1.4 MiB + 1 × 162 KiB) |
+| Stored MD5 | `2692f3177a389e58906b5c9080aa1add` |
+| Stored SHA-1 | `2d51e94e694ab425a73604e94d2020d00c182958` |
+
+**ewfverify output:**
+```
+MD5 hash stored in file:       2692f3177a389e58906b5c9080aa1add
+MD5 hash calculated over data: 2692f3177a389e58906b5c9080aa1add
+SHA1 hash stored in file:      2d51e94e694ab425a73604e94d2020d00c182958
+SHA1 hash calculated over data: 2d51e94e694ab425a73604e94d2020d00c182958
+ewfverify: SUCCESS
+```
+
+**ewf-forensic result:** CLEAN — no anomalies across all 8 segments.
+- MD5 and SHA-1 pinned against ewfverify ground truth in `multiseg_v1_md5_matches` / `multiseg_v1_sha1_matches`.
+- `compute_hashes()` matches ewfverify ground truth in `multiseg_v1_computed_hashes_match`.
+- Sibling auto-discovery (pass only E01, auto-finds E02..E08) verified in `multiseg_v1_sibling_auto_discovery`.
+
+---
+
+### 5. ewfacquire_clean (ewfacquire — EWF v1 single-segment)
+
+| Property | Value |
+|----------|-------|
+| Tool | ewfacquire 20231119 (libewf-tools) |
+| Filename | `ewfacquire_clean.E01` |
+| Format | EWF v1 (EnCase 6), no compression |
+| Source | 4 MiB of `/dev/zero` |
+| Stored MD5 | `b5cfa9d6c8febd618f91ac2843d50a1c` |
+| Stored SHA-1 | `2bccbd2f38f15c13eb7d5a89fd9d85f595e23bc3` |
+
+**ewfacquire output:**
+```
+MD5 hash calculated over data:  b5cfa9d6c8febd618f91ac2843d50a1c
+SHA1 hash calculated over data: 2bccbd2f38f15c13eb7d5a89fd9d85f595e23bc3
+ewfacquire: SUCCESS
+```
+
+**ewf-forensic result:** CLEAN — no anomalies.
+- Verified in `real_ewfacquire_clean_fixture_no_anomalies`.
+
+---
+
+### 6. zeros_128s (ewfacquirestream — EWF v2 uncompressed)
 
 | Property | Value |
 |----------|-------|
@@ -178,7 +229,7 @@ ewfverify: SUCCESS
 
 ---
 
-### 5. zeros_128s_compressed (Python zlib + ewfverify — EWF v2 compressed)
+### 7. zeros_128s_compressed (Python zlib + ewfverify — EWF v2 compressed)
 
 | Property | Value |
 |----------|-------|
@@ -265,18 +316,18 @@ cargo test
 ### Run ewfverify independently
 
 ```bash
-ewfverify -q tests/fixtures/exfat1.E01
-ewfverify -q tests/fixtures/nps-2010-emails.E01
-ewfverify -q tests/fixtures/imageformat_mmls_1.E01
-ewfverify -q tests/fixtures/zeros_128s.Ex01
-ewfverify -q tests/fixtures/zeros_128s_compressed.Ex01
+ewfverify -q tests/data/exfat1.E01
+ewfverify -q tests/data/nps-2010-emails.E01
+ewfverify -q tests/data/imageformat_mmls_1.E01
+ewfverify -q tests/data/zeros_128s.Ex01
+ewfverify -q tests/data/zeros_128s_compressed.Ex01
 
 # SHA-256 (computed over data; not stored in these images):
-ewfverify -d sha256 tests/fixtures/exfat1.E01
-ewfverify -d sha256 tests/fixtures/nps-2010-emails.E01
-ewfverify -d sha256 tests/fixtures/imageformat_mmls_1.E01
-ewfverify -d sha256 -d sha1 tests/fixtures/zeros_128s.Ex01
-ewfverify -d sha256 -d sha1 tests/fixtures/zeros_128s_compressed.Ex01
+ewfverify -d sha256 tests/data/exfat1.E01
+ewfverify -d sha256 tests/data/nps-2010-emails.E01
+ewfverify -d sha256 tests/data/imageformat_mmls_1.E01
+ewfverify -d sha256 -d sha1 tests/data/zeros_128s.Ex01
+ewfverify -d sha256 -d sha1 tests/data/zeros_128s_compressed.Ex01
 ```
 
 ### Download and verify fixtures from source
@@ -297,19 +348,21 @@ md5 imageformat_mmls_1.E01  # expect bb6c6bec25d589e87a11af9129275cc9
 
 ## Summary
 
-| Image | Format | Media size | Chunks | MD5 | SHA-1 | SHA-256 | Tamper | Decomp error |
-|-------|--------|-----------|--------|-----|-------|---------|--------|--------------|
-| exfat1 | EnCase 6, compressed | 95 MiB | 3,053 | ewfverify match | N/A | ewfverify match | Detected | Localised (chunk 0) |
-| nps-2010-emails | EnCase 6, compressed | 10 MiB | 320 | ewfverify match | N/A | ewfverify match | Detected | — |
-| imageformat_mmls_1 | FTK Imager, compressed | 60 MiB | 1,921 | ewfverify match | ewfverify match | ewfverify match | — | — |
-| zeros_128s | EWF v2 uncompressed | 64 KB | 2 | ewfverify match | N/A | ewfverify match | — | — |
-| zeros_128s_compressed | EWF v2 zlib (Python oracle) | 64 KB | 2 | ewfverify match | ewfverify match | ewfverify match | — | Localised (chunk 0) |
+| Image | Format | Segments | Media size | MD5 | SHA-1 | SHA-256 | Tamper | Decomp error |
+|-------|--------|----------|-----------|-----|-------|---------|--------|--------------|
+| exfat1 | EnCase 6, compressed | 1 | 95 MiB | ewfverify match | N/A | ewfverify match | Detected | Localised (chunk 0) |
+| nps-2010-emails | EnCase 6, compressed | 1 | 10 MiB | ewfverify match | N/A | ewfverify match | Detected | — |
+| imageformat_mmls_1 | FTK Imager, compressed | 1 | 60 MiB | ewfverify match | ewfverify match | ewfverify match | — | — |
+| multiseg_v1 | ewfacquire, uncompressed | 8 | 10 MiB | ewfverify match | ewfverify match | N/A | — | — |
+| ewfacquire_clean | ewfacquire, uncompressed | 1 | 4 MiB | ewfacquire match | ewfacquire match | N/A | — | — |
+| zeros_128s | EWF v2 uncompressed | 1 | 64 KB | ewfverify match | N/A | ewfverify match | — | — |
+| zeros_128s_compressed | EWF v2 zlib (Python oracle) | 1 | 64 KB | ewfverify match | ewfverify match | ewfverify match | — | Localised (chunk 0) |
 
-All five images pass with zero Error/Critical findings. MD5, SHA-1 (where stored), and SHA-256 match ewfverify byte-for-byte. Tamper detection and decompression error localisation are verified by targeted byte-flip mutation tests.
+All seven images pass with zero Error/Critical findings. MD5, SHA-1 (where stored), and SHA-256 match ewfverify byte-for-byte. Tamper detection and decompression error localisation are verified by targeted byte-flip mutation tests.
 
 ## Known Limitations
 
-- All EWF v1 fixtures use compressed chunks exclusively. The uncompressed-chunk Adler-32 path (`ChunkChecksumMismatch`) is covered only by synthetic builder tests; no real uncompressed-chunk fixture is available in the public corpus.
-- Multi-segment images (E01+E02+…) are covered by synthetic builder tests and the Ex-prefix sibling-discovery bug fix; no real multi-segment fixture is committed.
-- EWF v2 progress reporting sets `chunks_total = None` for EWF v1 (chunk count is not known ahead of the verification loop); `chunks_total = Some(n)` is available for EWF v2 only.
+- The committed EWF v1 fixtures from Digital Corpora (`exfat1`, `nps-2010-emails`, `imageformat_mmls_1`) all use compressed chunks. The uncompressed-chunk Adler-32 path (`ChunkChecksumMismatch`) is covered by synthetic builder tests and by the `ewfacquire_clean.E01` fixture; no large real-world uncompressed fixture is available in the public corpus.
+- `AnalysisProgress.chunks_total` is `None` during EWF v1 analysis — the chunk count is discovered by walking the section chain, not declared in a header. `Some(n)` is available for EWF v2 only, where the chunk table declares its entry count up front.
 - The `zeros_128s_compressed.Ex01` fixture is Python-generated (not acquired by a commercial tool). It passes ewfverify but may not expose tool-specific quirks in the EWF v2 writer.
+- FTK Imager and X-Ways real-fixture tests are deferred (`#[ignore]`) — these are Windows-only GUI tools. The format variations they produce are covered by always-on synthetic builder tests in `tool_fixtures_tests`.
