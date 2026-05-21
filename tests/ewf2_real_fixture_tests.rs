@@ -1,6 +1,6 @@
 //! Real EWF v2 fixture tests — zeros_128s.Ex01 created by libewf ewfacquirestream.
 //!
-//! Fixture: tests/fixtures/zeros_128s.Ex01
+//! Fixture: tests/data/zeros_128s.Ex01
 //!   Created with: dd if=/dev/zero bs=512 count=128 | ewfacquirestream -f encase7-v2 -d sha1 -d sha256 -t /tmp/test_ex01
 //!   ewfverify reports: MD5=fcd6bcb56c1689fcef28b57c22475bad, SHA256=de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31
 //!   ewfverify exits: SUCCESS
@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/zeros_128s.Ex01")
+        .join("tests/data/zeros_128s.Ex01")
 }
 
 // ── Clean real Ex01: no hash-section-missing warning ─────────────────────────

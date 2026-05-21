@@ -1,6 +1,6 @@
 //! RED phase — EWF v2 full verification: external hashes + chunk table checksum.
 //!
-//! Fixture: tests/fixtures/zeros_128s.Ex01
+//! Fixture: tests/data/zeros_128s.Ex01
 //!   ewfverify MD5 : fcd6bcb56c1689fcef28b57c22475bad
 //!   ewfverify SHA-1: 1adc95bebe9eea8c112d40cd04ab7a8d75c4f961
 //!   ewfverify SHA-256: de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31
@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 fn fixture_bytes() -> Vec<u8> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/zeros_128s.Ex01");
+        .join("tests/data/zeros_128s.Ex01");
     if !path.exists() {
         return vec![];
     }
@@ -25,7 +25,7 @@ fn fixture_bytes() -> Vec<u8> {
 }
 
 fn fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/zeros_128s.Ex01")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/zeros_128s.Ex01")
 }
 
 fn skip_if_empty(data: &[u8]) -> bool {

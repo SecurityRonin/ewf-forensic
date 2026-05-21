@@ -1,13 +1,13 @@
 // Integration tests against the three small E01 fixtures committed to
-// tests/fixtures/. They run in CI on every push.
+// tests/data/. They run in CI on every push.
 //
 // Ground truth MD5/SHA-1 values come from:
-//   ewfverify -q tests/fixtures/<name>.E01
+//   ewfverify -q tests/data/<name>.E01
 // which is the reference implementation for EWF integrity verification.
 
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, Severity};
 
-const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
+const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data");
 
 fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(format!("{FIXTURES}/{name}")).expect("read fixture")
@@ -232,7 +232,7 @@ fn mmls_no_chunk_checksum_mismatch() {
 
 // ── SHA-256 pinned against ewfverify ground truth ─────────────────────────────
 //
-// ewfverify -d sha256 -q tests/fixtures/<name>.E01 (run 2026-05-14):
+// ewfverify -d sha256 -q tests/data/<name>.E01 (run 2026-05-14):
 //   exfat1.E01          af6f974495187c35050d5c66d271617a1ec00d446adcf8590d7042ad2bf02bb7
 //   nps-2010-emails.E01 ed4e1b20fb92d9609778d6f687ef478c2ed88d7da18f98b8b023f3dfecd41a9d
 //   imageformat_mmls_1  e7eb6fca46bebeedc4af4cc5bfe9675691bab8ce471315317b561a28899e7902

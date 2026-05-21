@@ -22,7 +22,7 @@ use std::path::PathBuf;
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/zeros_128s.Ex01")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/zeros_128s.Ex01")
 }
 
 /// Build a minimal EWF v2 segment whose media_info section body is the raw

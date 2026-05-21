@@ -19,7 +19,7 @@ fn ewf1_fixture() -> Vec<u8> {
 }
 
 fn ewf2_fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/zeros_128s.Ex01")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/zeros_128s.Ex01")
 }
 
 // ── EWF v1 progress tests ─────────────────────────────────────────────────────

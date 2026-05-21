@@ -120,7 +120,7 @@ fn ewf2_stored_sha1_correct_no_mismatch() {
 #[test]
 fn ewf2_real_fixture_no_sha1_mismatch() {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/zeros_128s.Ex01");
+        .join("tests/data/zeros_128s.Ex01");
     if !path.exists() {
         eprintln!("skipping: fixture not found");
         return;

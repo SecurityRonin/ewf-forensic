@@ -5,7 +5,7 @@
 //!   2. #[ignore] tests against real binary fixtures (run when present).
 //!
 //! Synthetic tests fail until the builder helpers are added to builder.rs.
-//! Ignored tests will fail until someone drops real E01 files into tests/fixtures/.
+//! Ignored tests will fail until someone drops real E01 files into tests/data/.
 mod builder;
 
 use builder::{
@@ -115,14 +115,14 @@ fn tampered_hash_severity_is_error() {
 // ── Real fixture tests (ignored until files are present) ─────────────────────
 //
 // To run: cargo test --test tool_fixtures_tests -- --ignored
-// Fixture placement: tests/fixtures/ftk_imager_clean.E01 etc.
-// See tests/fixtures/README.md for acquisition instructions.
+// Fixture placement: tests/data/ftk_imager_clean.E01 etc.
+// See tests/data/README.md for acquisition instructions.
 
 #[test]
-#[ignore = "requires tests/fixtures/ftk_imager_clean.E01 — see tests/fixtures/README.md"]
+#[ignore = "requires tests/data/ftk_imager_clean.E01 — see tests/data/README.md"]
 fn real_ftk_imager_clean_fixture_no_anomalies() {
     use ewf_forensic::EwfIntegrityPath;
-    let path = std::path::Path::new("tests/fixtures/ftk_imager_clean.E01");
+    let path = std::path::Path::new("tests/data/ftk_imager_clean.E01");
     if !path.exists() {
         panic!("fixture missing: {}", path.display());
     }
@@ -138,10 +138,10 @@ fn real_ftk_imager_clean_fixture_no_anomalies() {
 }
 
 #[test]
-#[ignore = "requires tests/fixtures/ftk_imager_tampered.E01 — see tests/fixtures/README.md"]
+#[ignore = "requires tests/data/ftk_imager_tampered.E01 — see tests/data/README.md"]
 fn real_ftk_imager_tampered_fixture_hash_mismatch() {
     use ewf_forensic::EwfIntegrityPath;
-    let path = std::path::Path::new("tests/fixtures/ftk_imager_tampered.E01");
+    let path = std::path::Path::new("tests/data/ftk_imager_tampered.E01");
     if !path.exists() {
         panic!("fixture missing: {}", path.display());
     }
@@ -155,10 +155,10 @@ fn real_ftk_imager_tampered_fixture_hash_mismatch() {
 }
 
 #[test]
-#[ignore = "requires tests/fixtures/xways_clean.E01 — see tests/fixtures/README.md"]
+#[ignore = "requires tests/data/xways_clean.E01 — see tests/data/README.md"]
 fn real_xways_clean_fixture_no_anomalies() {
     use ewf_forensic::EwfIntegrityPath;
-    let path = std::path::Path::new("tests/fixtures/xways_clean.E01");
+    let path = std::path::Path::new("tests/data/xways_clean.E01");
     if !path.exists() {
         panic!("fixture missing: {}", path.display());
     }
@@ -174,10 +174,10 @@ fn real_xways_clean_fixture_no_anomalies() {
 }
 
 #[test]
-#[ignore = "requires tests/fixtures/ewfacquire_clean.E01 — see tests/fixtures/README.md"]
+#[ignore = "requires tests/data/ewfacquire_clean.E01 — see tests/data/README.md"]
 fn real_ewfacquire_clean_fixture_no_anomalies() {
     use ewf_forensic::EwfIntegrityPath;
-    let path = std::path::Path::new("tests/fixtures/ewfacquire_clean.E01");
+    let path = std::path::Path::new("tests/data/ewfacquire_clean.E01");
     if !path.exists() {
         panic!("fixture missing: {}", path.display());
     }

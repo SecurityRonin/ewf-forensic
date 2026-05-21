@@ -1,6 +1,6 @@
 //! RED phase — EWF v2 compressed chunk decompression.
 //!
-//! Fixture: tests/fixtures/zeros_128s_compressed.Ex01
+//! Fixture: tests/data/zeros_128s_compressed.Ex01
 //!   Created by Python's zlib.compress(level=1), validated by ewfverify.
 //!   2 chunks of 64 sectors × 512 bytes = 65536 bytes total, all zeros.
 //!
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/zeros_128s_compressed.Ex01")
+        .join("tests/data/zeros_128s_compressed.Ex01")
 }
 
 fn fixture_bytes() -> Vec<u8> {
