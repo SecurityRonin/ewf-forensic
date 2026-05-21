@@ -20,6 +20,7 @@ cargo test --test tool_fixtures_tests -- --ignored
 | `exfat1.E01` | EWF v1 (EnCase 6), compressed | 268 KiB | FTK Imager (DFTT corpus) |
 | `imageformat_mmls_1.E01` | EWF v1, compressed | 405 KiB | FTK Imager (DFTT corpus) |
 | `nps-2010-emails.E01` | EWF v1 (EnCase 6), compressed | 507 KiB | EnCase (NPS corpus) |
+| `ctf_file6.E01` | EWF v1, compressed | 156 KiB | CTF — github.com/mfput/CTF-Questions |
 
 ### zeros_128s.Ex01
 
@@ -110,6 +111,77 @@ ewfacquire: SUCCESS
 
 **ewf-forensic expected behavior:**
 - 0 anomalies at any severity
+
+---
+
+## CTF and public-corpus fixtures (not committed — too large)
+
+Download with:
+
+```bash
+python3 -c "
+import urllib.request
+urllib.request.urlretrieve(
+    'https://raw.githubusercontent.com/oddin-forensic/autopsy-sample-case/master/2011-10-19-Sample.E01',
+    'tests/data/2011-10-19-Sample.E01')
+urllib.request.urlretrieve(
+    'https://raw.githubusercontent.com/HaxonicOfficial/CTF-Practice/master/CNC.E01',
+    'tests/data/CNC.E01')
+"
+cargo test --test ctf_fixture_tests -- --ignored
+```
+
+| File | Size | Source | Tool | Divergence |
+|------|------|--------|------|------------|
+| `2011-10-19-Sample.E01` | 60 MB | [oddin-forensic/autopsy-sample-case](https://github.com/oddin-forensic/autopsy-sample-case) | Autopsy / EnCase 7 | ewfverify ignores `error2` section; ewf-forensic reports `BadSectorsPresent` (Warning) |
+| `CNC.E01` | 88 MB | [HaxonicOfficial/CTF-Practice](https://github.com/HaxonicOfficial/CTF-Practice) | FTK Imager | **ewfverify false negative**: exits 0 despite `TableChunkCountMismatch` (61440 declared vs 16375 accessible chunks); ewf-forensic reports Error |
+
+### ctf_file6.E01
+
+Source: [github.com/mfput/CTF-Questions](https://github.com/mfput/CTF-Questions/blob/master/file6.E01).
+Cal Poly forensics CTF image.
+
+**ewfverify-confirmed:**
+```
+ewfverify: SUCCESS (exit 0)
+```
+
+**ewf-forensic expected behaviour:**
+- 0 anomalies at any severity
+
+---
+
+### 2011-10-19-Sample.E01 (not committed)
+
+Autopsy sample case "Victor Bushell Laptop". EWF v1 / EnCase 7 format.
+
+**Characterisation difference:**
+- ewfverify exits 0 (SUCCESS) — silently ignores the `error2` section
+- ewf-forensic reports `BadSectorsPresent` (Warning): 1 unreadable sector range recorded at acquisition
+- Both agree: no hash mismatch, no structural damage
+- ewf-forensic is more informative; this is not a false positive
+
+---
+
+### CNC.E01 (not committed)
+
+HaxonicOfficial CTF Practice image. FTK Imager / EWF v1.
+
+**Critical ewfverify false negative:**
+
+ewfinfo reports: 1.8 GiB declared (61 440 chunks), 512 bytes/sector.
+The file is only 84 MB. The table section indexes 16 375 chunks (~511 MB accessible).
+ewfverify hashes only accessible sectors; the stored MD5 matches those sectors → exits 0 (SUCCESS).
+
+ewf-forensic reports:
+```
+[ERROR]  chunk count mismatch: volume declares 61440, table has 16375
+[ERROR]  MD5 mismatch: computed a2a03d7f..., stored 8ac02f47...
+[ERROR]  SHA-1 mismatch: computed cd6a6169..., stored da9d570...
+```
+
+**ewf-forensic is correct.** The image is structurally inconsistent — a partial/truncated acquisition.
+ewfverify is wrong to report SUCCESS; this is a genuine false negative.
 
 ---
 
