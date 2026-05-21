@@ -174,7 +174,6 @@ fn real_xways_clean_fixture_no_anomalies() {
 }
 
 #[test]
-#[ignore = "requires tests/data/ewfacquire_clean.E01 — see tests/data/README.md"]
 fn real_ewfacquire_clean_fixture_no_anomalies() {
     use ewf_forensic::EwfIntegrityPath;
     let path = std::path::Path::new("tests/data/ewfacquire_clean.E01");
