@@ -49,7 +49,7 @@ fn ewf2_media_info_missing_is_warning() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::Ewf2MediaInfoMissing))
     {
-        assert_eq!(a.severity(), Severity::Warning);
+        assert_eq!(a.severity(), Severity::Medium);
     }
 }
 

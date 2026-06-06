@@ -22,7 +22,7 @@ fn ftk_imager_style_clean_no_critical_errors() {
     let findings = EwfIntegrity::new(&data).analyse();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),
@@ -50,7 +50,7 @@ fn xways_style_clean_no_critical_errors() {
     let findings = EwfIntegrity::new(&data).analyse();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),
@@ -78,7 +78,7 @@ fn ewfacquire_style_clean_no_critical_errors() {
     let findings = EwfIntegrity::new(&data).analyse();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),
@@ -108,7 +108,7 @@ fn tampered_hash_severity_is_error() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::HashMismatch { .. }))
     {
-        assert_eq!(a.severity(), Severity::Error);
+        assert_eq!(a.severity(), Severity::High);
     }
 }
 
@@ -129,7 +129,7 @@ fn real_ftk_imager_clean_fixture_no_anomalies() {
     let findings = EwfIntegrityPath::from_path(path).analyse().unwrap();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),
@@ -165,7 +165,7 @@ fn real_xways_clean_fixture_no_anomalies() {
     let findings = EwfIntegrityPath::from_path(path).analyse().unwrap();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),
@@ -183,7 +183,7 @@ fn real_ewfacquire_clean_fixture_no_anomalies() {
     let findings = EwfIntegrityPath::from_path(path).analyse().unwrap();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),

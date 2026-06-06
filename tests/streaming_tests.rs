@@ -25,7 +25,7 @@ fn analyse_path_clean_no_anomalies() {
     let findings = EwfIntegrityPath::from_path(f.path()).analyse().unwrap();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),
@@ -85,7 +85,7 @@ fn analyse_paths_two_segments_clean() {
         .unwrap();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),
@@ -123,7 +123,7 @@ fn analyse_path_auto_discovers_e02_sibling() {
     let findings = EwfIntegrityPath::from_path(&e01).analyse().unwrap();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),

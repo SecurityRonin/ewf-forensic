@@ -28,15 +28,17 @@ fn main() {
             for a in &findings {
                 let tag = match a.severity() {
                     Severity::Critical => "[CRIT ]",
-                    Severity::Error => "[ERROR]",
-                    Severity::Warning => "[WARN ]",
+                    Severity::High => "[HIGH ]",
+                    Severity::Medium => "[MED  ]",
+                    Severity::Low => "[LOW  ]",
                     Severity::Info => "[INFO ]",
+                    _ => "[?    ]",
                 };
                 println!("{tag}  {path}  ({size_kb} KB)  {a:?}");
             }
             let has_error = findings
                 .iter()
-                .any(|a| matches!(a.severity(), Severity::Critical | Severity::Error));
+                .any(|a| matches!(a.severity(), Severity::Critical | Severity::High));
             if has_error {
                 any_error = true;
             }

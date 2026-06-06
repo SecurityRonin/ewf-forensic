@@ -228,7 +228,7 @@ fn hash_mismatch_detected() {
     );
 }
 
-// Test 17: no hash section present → HashSectionMissing (Warning)
+// Test 17: no hash section present → HashSectionMissing (Medium)
 #[test]
 fn hash_section_missing_detected() {
     let image = E01Builder::new(512 * 64).with_omit_hash().build();
@@ -245,8 +245,8 @@ fn hash_section_missing_detected() {
         .unwrap();
     assert_eq!(
         anomaly.severity(),
-        Severity::Warning,
-        "HashSectionMissing should be Warning severity"
+        Severity::Medium,
+        "HashSectionMissing should be Medium severity"
     );
 }
 
@@ -310,7 +310,7 @@ fn severity_levels_correct() {
     use Severity::*;
     let cases: &[(EwfIntegrityAnomaly, Severity)] = &[
         (EwfIntegrityAnomaly::InvalidSignature, Critical),
-        (EwfIntegrityAnomaly::SegmentNumberZero, Error),
+        (EwfIntegrityAnomaly::SegmentNumberZero, High),
         (
             EwfIntegrityAnomaly::SectionDescriptorCrcMismatch {
                 offset: 0,
@@ -318,7 +318,7 @@ fn severity_levels_correct() {
                 computed: 0,
                 stored: 1,
             },
-            Error,
+            High,
         ),
         (
             EwfIntegrityAnomaly::SectionChainBroken {
@@ -332,7 +332,7 @@ fn severity_levels_correct() {
                 gap_offset: 0,
                 gap_size: 16,
             },
-            Warning,
+            Medium,
         ),
         (EwfIntegrityAnomaly::VolumeSectionMissing, Critical),
         (
@@ -340,35 +340,35 @@ fn severity_levels_correct() {
                 offset: 0,
                 type_name: String::new(),
             },
-            Warning,
+            Medium,
         ),
-        (EwfIntegrityAnomaly::DoneSectionMissing, Warning),
+        (EwfIntegrityAnomaly::DoneSectionMissing, Medium),
         (
             EwfIntegrityAnomaly::ChunkSizeInvalid {
                 sectors_per_chunk: 63,
                 bytes_per_sector: 512,
             },
-            Error,
+            High,
         ),
         (
             EwfIntegrityAnomaly::SectorCountMismatch {
                 declared: 0,
                 expected: 0,
             },
-            Error,
+            High,
         ),
         (
             EwfIntegrityAnomaly::BytesPerSectorInvalid {
                 bytes_per_sector: 1024,
             },
-            Error,
+            High,
         ),
         (
             EwfIntegrityAnomaly::TableChunkCountMismatch {
                 in_volume: 1,
                 in_table: 99,
             },
-            Error,
+            High,
         ),
         (
             EwfIntegrityAnomaly::TableEntryOutOfBounds {
@@ -376,7 +376,7 @@ fn severity_levels_correct() {
                 entry_offset: 0,
                 file_size: 0,
             },
-            Error,
+            High,
         ),
         (
             EwfIntegrityAnomaly::TableEntryOutsideSectorsRange {
@@ -385,7 +385,7 @@ fn severity_levels_correct() {
                 sectors_start: 0,
                 sectors_end: 0,
             },
-            Error,
+            High,
         ),
         (
             EwfIntegrityAnomaly::SectionGapZero {

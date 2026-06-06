@@ -44,14 +44,9 @@ const EVF2_CHUNK_TABLE_ENTRY_SIZE: usize = 16;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum Severity {
-    Info,
-    Warning,
-    Error,
-    Critical,
-}
+/// The canonical 5-level severity scale, shared across every SecurityRonin
+/// analyzer via [`forensicnomicon::report`].
+pub use forensicnomicon::report::Severity;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -220,45 +215,45 @@ impl EwfIntegrityAnomaly {
     pub fn severity(&self) -> Severity {
         match self {
             Self::InvalidSignature => Severity::Critical,
-            Self::SegmentNumberZero => Severity::Error,
-            Self::SectionDescriptorCrcMismatch { .. } => Severity::Error,
+            Self::SegmentNumberZero => Severity::High,
+            Self::SectionDescriptorCrcMismatch { .. } => Severity::High,
             Self::SectionChainBroken { .. } => Severity::Critical,
-            Self::SectionGapNonZero { .. } => Severity::Warning,
+            Self::SectionGapNonZero { .. } => Severity::Medium,
             Self::VolumeSectionMissing => Severity::Critical,
-            Self::UnknownSectionType { .. } => Severity::Warning,
-            Self::DoneSectionMissing => Severity::Warning,
-            Self::SectorsSectionMissing => Severity::Error,
-            Self::TableSectionMissing => Severity::Error,
-            Self::ChunkSizeInvalid { .. } => Severity::Error,
-            Self::SectorCountMismatch { .. } => Severity::Error,
-            Self::BytesPerSectorInvalid { .. } => Severity::Error,
-            Self::TableChunkCountMismatch { .. } => Severity::Error,
-            Self::TableHeaderAdler32Mismatch { .. } => Severity::Error,
-            Self::TableEntryOutOfBounds { .. } => Severity::Error,
-            Self::TableEntryOutsideSectorsRange { .. } => Severity::Error,
+            Self::UnknownSectionType { .. } => Severity::Medium,
+            Self::DoneSectionMissing => Severity::Medium,
+            Self::SectorsSectionMissing => Severity::High,
+            Self::TableSectionMissing => Severity::High,
+            Self::ChunkSizeInvalid { .. } => Severity::High,
+            Self::SectorCountMismatch { .. } => Severity::High,
+            Self::BytesPerSectorInvalid { .. } => Severity::High,
+            Self::TableChunkCountMismatch { .. } => Severity::High,
+            Self::TableHeaderAdler32Mismatch { .. } => Severity::High,
+            Self::TableEntryOutOfBounds { .. } => Severity::High,
+            Self::TableEntryOutsideSectorsRange { .. } => Severity::High,
             Self::SectionGapZero { .. } => Severity::Info,
-            Self::HashMismatch { .. } => Severity::Error,
-            Self::HashSectionMissing => Severity::Warning,
-            Self::Table2Mismatch { .. } => Severity::Error,
-            Self::BadSectorsPresent { .. } => Severity::Warning,
-            Self::SegmentOutOfOrder { .. } => Severity::Error,
-            Self::DigestSha1Mismatch { .. } => Severity::Error,
-            Self::DigestSha256Mismatch { .. } => Severity::Error,
+            Self::HashMismatch { .. } => Severity::High,
+            Self::HashSectionMissing => Severity::Medium,
+            Self::Table2Mismatch { .. } => Severity::High,
+            Self::BadSectorsPresent { .. } => Severity::Medium,
+            Self::SegmentOutOfOrder { .. } => Severity::High,
+            Self::DigestSha1Mismatch { .. } => Severity::High,
+            Self::DigestSha256Mismatch { .. } => Severity::High,
             Self::ExternalMd5Mismatch { .. } => Severity::Critical,
             Self::ExternalSha1Mismatch { .. } => Severity::Critical,
-            Self::VolumeBodyCrcMismatch { .. } => Severity::Error,
-            Self::MediaTypeUnknown { .. } => Severity::Warning,
-            Self::SetIdentifierMismatch { .. } => Severity::Error,
-            Self::Ewf2SectionDataHashMismatch { .. } => Severity::Error,
-            Self::Ewf2EncryptedSection { .. } => Severity::Warning,
-            Self::Ewf2HashSectionMissing => Severity::Warning,
-            Self::Ewf2MediaInfoMissing => Severity::Warning,
-            Self::Ewf2ChunkTableChecksumMismatch { .. } => Severity::Error,
-            Self::ChunkChecksumMismatch { .. } => Severity::Error,
-            Self::ChunkDecompressionError { .. } => Severity::Error,
-            Self::UnsupportedCompressionAlgorithm { .. } => Severity::Error,
+            Self::VolumeBodyCrcMismatch { .. } => Severity::High,
+            Self::MediaTypeUnknown { .. } => Severity::Medium,
+            Self::SetIdentifierMismatch { .. } => Severity::High,
+            Self::Ewf2SectionDataHashMismatch { .. } => Severity::High,
+            Self::Ewf2EncryptedSection { .. } => Severity::Medium,
+            Self::Ewf2HashSectionMissing => Severity::Medium,
+            Self::Ewf2MediaInfoMissing => Severity::Medium,
+            Self::Ewf2ChunkTableChecksumMismatch { .. } => Severity::High,
+            Self::ChunkChecksumMismatch { .. } => Severity::High,
+            Self::ChunkDecompressionError { .. } => Severity::High,
+            Self::UnsupportedCompressionAlgorithm { .. } => Severity::High,
             Self::ExternalSha256Mismatch { .. } => Severity::Critical,
-            Self::Ewf2MediaInfoParseFailed => Severity::Error,
+            Self::Ewf2MediaInfoParseFailed => Severity::High,
         }
     }
 }
@@ -1860,4 +1855,66 @@ pub(crate) fn adler32(data: &[u8]) -> u32 {
         s2 = (s2 + s1) % MOD;
     }
     (s2 << 16) | s1
+}
+
+
+impl EwfIntegrityAnomaly {
+    /// Stable, scheme-prefixed machine code for this anomaly.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::InvalidSignature => "EWF-INVALID-SIGNATURE",
+            Self::SegmentNumberZero => "EWF-SEGMENT-NUMBER-ZERO",
+            Self::SectionDescriptorCrcMismatch { .. } => "EWF-SECTION-DESCRIPTOR-CRC-MISMATCH",
+            Self::SectionChainBroken { .. } => "EWF-SECTION-CHAIN-BROKEN",
+            Self::SectionGapNonZero { .. } => "EWF-SECTION-GAP-NON-ZERO",
+            Self::VolumeSectionMissing => "EWF-VOLUME-SECTION-MISSING",
+            Self::UnknownSectionType { .. } => "EWF-UNKNOWN-SECTION-TYPE",
+            Self::DoneSectionMissing => "EWF-DONE-SECTION-MISSING",
+            Self::SectorsSectionMissing => "EWF-SECTORS-SECTION-MISSING",
+            Self::TableSectionMissing => "EWF-TABLE-SECTION-MISSING",
+            Self::ChunkSizeInvalid { .. } => "EWF-CHUNK-SIZE-INVALID",
+            Self::SectorCountMismatch { .. } => "EWF-SECTOR-COUNT-MISMATCH",
+            Self::BytesPerSectorInvalid { .. } => "EWF-BYTES-PER-SECTOR-INVALID",
+            Self::TableChunkCountMismatch { .. } => "EWF-TABLE-CHUNK-COUNT-MISMATCH",
+            Self::TableHeaderAdler32Mismatch { .. } => "EWF-TABLE-HEADER-ADLER32-MISMATCH",
+            Self::TableEntryOutOfBounds { .. } => "EWF-TABLE-ENTRY-OUT-OF-BOUNDS",
+            Self::TableEntryOutsideSectorsRange { .. } => "EWF-TABLE-ENTRY-OUTSIDE-SECTORS-RANGE",
+            Self::SectionGapZero { .. } => "EWF-SECTION-GAP-ZERO",
+            Self::HashMismatch { .. } => "EWF-HASH-MISMATCH",
+            Self::HashSectionMissing => "EWF-HASH-SECTION-MISSING",
+            Self::Table2Mismatch { .. } => "EWF-TABLE2-MISMATCH",
+            Self::BadSectorsPresent { .. } => "EWF-BAD-SECTORS-PRESENT",
+            Self::SegmentOutOfOrder { .. } => "EWF-SEGMENT-OUT-OF-ORDER",
+            Self::DigestSha1Mismatch { .. } => "EWF-DIGEST-SHA1-MISMATCH",
+            Self::DigestSha256Mismatch { .. } => "EWF-DIGEST-SHA256-MISMATCH",
+            Self::ExternalMd5Mismatch { .. } => "EWF-EXTERNAL-MD5-MISMATCH",
+            Self::ExternalSha1Mismatch { .. } => "EWF-EXTERNAL-SHA1-MISMATCH",
+            Self::Ewf2SectionDataHashMismatch { .. } => "EWF-EWF2-SECTION-DATA-HASH-MISMATCH",
+            Self::Ewf2EncryptedSection { .. } => "EWF-EWF2-ENCRYPTED-SECTION",
+            Self::Ewf2HashSectionMissing => "EWF-EWF2-HASH-SECTION-MISSING",
+            Self::VolumeBodyCrcMismatch { .. } => "EWF-VOLUME-BODY-CRC-MISMATCH",
+            Self::MediaTypeUnknown { .. } => "EWF-MEDIA-TYPE-UNKNOWN",
+            Self::SetIdentifierMismatch { .. } => "EWF-SET-IDENTIFIER-MISMATCH",
+            Self::Ewf2MediaInfoMissing => "EWF-EWF2-MEDIA-INFO-MISSING",
+            Self::Ewf2ChunkTableChecksumMismatch { .. } => "EWF-EWF2-CHUNK-TABLE-CHECKSUM-MISMATCH",
+            Self::ChunkChecksumMismatch { .. } => "EWF-CHUNK-CHECKSUM-MISMATCH",
+            Self::ChunkDecompressionError { .. } => "EWF-CHUNK-DECOMPRESSION-ERROR",
+            Self::UnsupportedCompressionAlgorithm { .. } => "EWF-UNSUPPORTED-COMPRESSION-ALGORITHM",
+            Self::ExternalSha256Mismatch { .. } => "EWF-EXTERNAL-SHA256-MISMATCH",
+            Self::Ewf2MediaInfoParseFailed => "EWF-EWF2-MEDIA-INFO-PARSE-FAILED",
+        }
+    }
+}
+
+impl forensicnomicon::report::Observation for EwfIntegrityAnomaly {
+    fn severity(&self) -> Option<Severity> {
+        Some(self.severity())
+    }
+    fn code(&self) -> &'static str {
+        self.code()
+    }
+    fn note(&self) -> String {
+        self.to_string()
+    }
 }

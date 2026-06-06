@@ -39,7 +39,7 @@ fn two_segment_e01_clean_no_anomalies() {
 
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),
@@ -105,7 +105,7 @@ fn ewf2_clean_segment_no_critical_or_error_anomalies() {
     let findings = EwfIntegrity::new(&data).analyse();
     let fatal: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         fatal.is_empty(),
@@ -135,7 +135,7 @@ fn ewf2_section_data_hash_mismatch_is_error_severity() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::Ewf2SectionDataHashMismatch { .. }))
     {
-        assert_eq!(a.severity(), Severity::Error);
+        assert_eq!(a.severity(), Severity::High);
     }
 }
 
@@ -161,7 +161,7 @@ fn ewf2_encrypted_section_is_warning_severity() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::Ewf2EncryptedSection { .. }))
     {
-        assert_eq!(a.severity(), Severity::Warning);
+        assert_eq!(a.severity(), Severity::Medium);
     }
 }
 
@@ -218,7 +218,7 @@ fn digest_sha1_mismatch_is_error_severity() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::DigestSha1Mismatch { .. }))
     {
-        assert_eq!(a.severity(), Severity::Error);
+        assert_eq!(a.severity(), Severity::High);
     }
 }
 
@@ -322,5 +322,5 @@ fn segment_out_of_order_is_error_severity() {
         segment_number: 2,
         expected: 1,
     };
-    assert_eq!(anomaly.severity(), Severity::Error);
+    assert_eq!(anomaly.severity(), Severity::High);
 }

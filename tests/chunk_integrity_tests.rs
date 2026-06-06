@@ -55,7 +55,7 @@ fn chunk_checksum_mismatch_is_error_severity() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::ChunkChecksumMismatch { .. }))
         .expect("ChunkChecksumMismatch must be present on corrupt image");
-    assert_eq!(a.severity(), Severity::Error);
+    assert_eq!(a.severity(), Severity::High);
 }
 
 // ── Images without per-chunk checksums (no-checksum builder) are unaffected ──

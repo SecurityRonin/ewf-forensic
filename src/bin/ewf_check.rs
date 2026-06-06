@@ -64,11 +64,12 @@ fn main() {
         if let Some(val) = arg.strip_prefix("--min-severity=") {
             min_severity = match val {
                 "info" | "Info" => Severity::Info,
-                "warning" | "Warning" => Severity::Warning,
-                "error" | "Error" => Severity::Error,
+                "low" | "Low" => Severity::Low,
+                "medium" | "Medium" | "warning" | "Warning" => Severity::Medium,
+                "high" | "High" | "error" | "Error" => Severity::High,
                 "critical" | "Critical" => Severity::Critical,
                 other => {
-                    eprintln!("error: unknown severity level '{other}'; expected info/warning/error/critical");
+                    eprintln!("error: unknown severity level '{other}'; expected info/low/medium/high/critical");
                     process::exit(2);
                 }
             };
@@ -190,9 +191,11 @@ fn print_text(visible: &[&EwfIntegrityAnomaly], min_severity: &Severity) {
     for anomaly in visible {
         let tag = match anomaly.severity() {
             Severity::Critical => "[CRITICAL]",
-            Severity::Error => "[ERROR]   ",
-            Severity::Warning => "[WARNING] ",
+            Severity::High => "[HIGH]    ",
+            Severity::Medium => "[MEDIUM]  ",
+            Severity::Low => "[LOW]     ",
             Severity::Info => "[INFO]    ",
+            _ => "[UNKNOWN] ",
         };
         println!("{tag} {anomaly}");
     }
@@ -326,17 +329,21 @@ fn severity_gte(a: Severity, min: &Severity) -> bool {
 fn severity_rank(s: &Severity) -> u8 {
     match s {
         Severity::Info => 0,
-        Severity::Warning => 1,
-        Severity::Error => 2,
-        Severity::Critical => 3,
+        Severity::Low => 1,
+        Severity::Medium => 2,
+        Severity::High => 3,
+        Severity::Critical => 4,
+        _ => 0,
     }
 }
 
 fn severity_label(s: &Severity) -> &'static str {
     match s {
         Severity::Info => "info",
-        Severity::Warning => "warning",
-        Severity::Error => "error",
+        Severity::Low => "low",
+        Severity::Medium => "medium",
+        Severity::High => "high",
         Severity::Critical => "critical",
+        _ => "unknown",
     }
 }

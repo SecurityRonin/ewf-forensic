@@ -89,7 +89,7 @@ fn full_volume_bad_crc_is_error_severity() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::VolumeBodyCrcMismatch { .. }))
     {
-        assert_eq!(a.severity(), Severity::Error);
+        assert_eq!(a.severity(), Severity::High);
     }
 }
 
@@ -144,7 +144,7 @@ fn unknown_media_type_is_warning_severity() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::MediaTypeUnknown { .. }))
     {
-        assert_eq!(a.severity(), Severity::Warning);
+        assert_eq!(a.severity(), Severity::Medium);
     }
 }
 
@@ -182,6 +182,6 @@ fn set_identifier_mismatch_is_error_severity() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::SetIdentifierMismatch { .. }))
     {
-        assert_eq!(a.severity(), Severity::Error);
+        assert_eq!(a.severity(), Severity::High);
     }
 }

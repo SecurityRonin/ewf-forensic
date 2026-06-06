@@ -18,7 +18,7 @@ fn assert_no_errors(name: &str) {
     let findings = EwfIntegrity::new(&data).analyse();
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
     assert!(
         errors.is_empty(),
@@ -349,5 +349,5 @@ fn chunk_decompression_error_is_error_severity() {
         .iter()
         .find(|a| matches!(a, EwfIntegrityAnomaly::ChunkDecompressionError { .. }))
         .expect("ChunkDecompressionError must be present");
-    assert_eq!(anomaly.severity(), Severity::Error);
+    assert_eq!(anomaly.severity(), Severity::High);
 }

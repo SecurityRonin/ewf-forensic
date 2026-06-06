@@ -66,7 +66,7 @@ fn run_differential(e01_path: &Path) -> Option<DiffResult> {
 
     let ewf_errors: Vec<String> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .map(|a| format!("{a}"))
         .collect();
 

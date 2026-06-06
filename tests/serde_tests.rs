@@ -16,8 +16,8 @@ use serde_json;
 #[test]
 fn severity_serializes_to_lowercase_string() {
     assert_eq!(serde_json::to_string(&Severity::Info).unwrap(), "\"Info\"");
-    assert_eq!(serde_json::to_string(&Severity::Warning).unwrap(), "\"Warning\"");
-    assert_eq!(serde_json::to_string(&Severity::Error).unwrap(), "\"Error\"");
+    assert_eq!(serde_json::to_string(&Severity::Medium).unwrap(), "\"Medium\"");
+    assert_eq!(serde_json::to_string(&Severity::High).unwrap(), "\"High\"");
     assert_eq!(serde_json::to_string(&Severity::Critical).unwrap(), "\"Critical\"");
 }
 

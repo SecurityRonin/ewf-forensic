@@ -41,7 +41,7 @@ fn multiseg_v1_clean_no_anomalies() {
 
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
 
     assert!(
@@ -109,7 +109,7 @@ fn multiseg_v1_sibling_auto_discovery() {
     // zero errors confirms all 8 segments were discovered and processed.
     let errors: Vec<_> = findings
         .iter()
-        .filter(|a| matches!(a.severity(), Severity::Error | Severity::Critical))
+        .filter(|a| matches!(a.severity(), Severity::High | Severity::Critical))
         .collect();
 
     assert!(
