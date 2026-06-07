@@ -9,6 +9,9 @@ repository = "https://github.com/SecurityRonin/ewf-forensic"
 authors = ["Albert Hui"]
 keywords = ["forensics", "ewf", "e01", "integrity", "tampering"]
 categories = ["parser-implementations"]
+# Keep the published package under crates.io's 10 MiB limit — test E01 corpora
+# and fuzz artifacts are not needed to build the crate.
+exclude = ["tests/data/", "fuzz/", "corpus/", "benches/", ".github/"]
 
 [lib]
 name = "ewf_forensic"
