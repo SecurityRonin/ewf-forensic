@@ -25,7 +25,7 @@ required-features = ["serde"]
 serde = ["dep:serde", "forensicnomicon/serde"]
 
 [dependencies]
-forensicnomicon = { version = "0.3.0", path = "../forensicnomicon" }
+forensicnomicon = "0.3.1"
 flate2 = "1"
 md-5 = "0.10"
 memmap2 = "0.9"
