@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Real multi-segment EWF v1 fixture tests.
 //!
 //! 8-segment EWF v1 image acquired with ewfacquire (libewf 20231119):

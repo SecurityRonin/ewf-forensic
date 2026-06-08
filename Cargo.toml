@@ -46,3 +46,63 @@ serde_json = "1"
 # Oracle for doer-checker TDD: blazehash independently computes expected hashes
 blazehash = { path = "../blazehash", default-features = false }
 proptest = "1"
+
+# `deny` (not `forbid`) because the path-based analyser needs exactly one
+# audited `unsafe`: read-only `memmap2::Mmap::map` of immutable evidence files.
+# Every other `unsafe` is still a hard error; the mmap sites opt in explicitly
+# with a justified `#[allow(unsafe_code)]`.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+pedantic              = { level = "warn", priority = -1 }
+correctness           = { level = "deny",  priority = -1 }
+suspicious            = { level = "deny",  priority = -1 }
+unwrap_used           = { level = "deny",  priority = 0  }
+expect_used           = { level = "deny",  priority = 0  }
+# Pragmatic allows (priority 1 overrides the grouped `pedantic = warn`). These are
+# stylistic/structural lints with no bearing on the panic-free, bounds-checked
+# parsing guarantee; the safety-relevant lints above stay hard denies.
+module_name_repetitions = { level = "allow", priority = 1 }
+must_use_candidate    = { level = "allow", priority = 1 }
+must_use_unit         = { level = "allow", priority = 1 }
+missing_errors_doc    = { level = "allow", priority = 1 }
+missing_panics_doc    = { level = "allow", priority = 1 }
+cast_possible_truncation = { level = "allow", priority = 1 }
+cast_possible_wrap    = { level = "allow", priority = 1 }
+cast_sign_loss        = { level = "allow", priority = 1 }
+cast_precision_loss   = { level = "allow", priority = 1 }
+cast_lossless         = { level = "allow", priority = 1 }
+match_same_arms       = { level = "allow", priority = 1 }
+doc_markdown          = { level = "allow", priority = 1 }
+manual_let_else       = { level = "allow", priority = 1 }
+needless_borrow       = { level = "allow", priority = 1 }
+similar_names         = { level = "allow", priority = 1 }
+too_many_lines        = { level = "allow", priority = 1 }
+too_many_arguments    = { level = "allow", priority = 1 }
+items_after_statements = { level = "allow", priority = 1 }
+return_self_not_must_use = { level = "allow", priority = 1 }
+format_collect        = { level = "allow", priority = 1 }
+redundant_closure_for_method_calls = { level = "allow", priority = 1 }
+map_unwrap_or         = { level = "allow", priority = 1 }
+manual_pattern_char_comparison = { level = "allow", priority = 1 }
+uninlined_format_args = { level = "allow", priority = 1 }
+single_match_else     = { level = "allow", priority = 1 }
+match_single_binding  = { level = "allow", priority = 1 }
+needless_pass_by_value = { level = "allow", priority = 1 }
+format_push_string    = { level = "allow", priority = 1 }
+single_char_add_str   = { level = "allow", priority = 1 }
+single_char_pattern   = { level = "allow", priority = 1 }
+question_mark         = { level = "allow", priority = 1 }
+bool_to_int_with_if   = { level = "allow", priority = 1 }
+struct_excessive_bools = { level = "allow", priority = 1 }
+unnecessary_literal_bound = { level = "allow", priority = 1 }
+manual_repeat_n       = { level = "allow", priority = 1 }
+needless_raw_string_hashes = { level = "allow", priority = 1 }
+unreadable_literal    = { level = "allow", priority = 1 }
+used_underscore_binding = { level = "allow", priority = 1 }
+needless_borrows_for_generic_args = { level = "allow", priority = 1 }
+trivially_copy_pass_by_ref = { level = "allow", priority = 1 }
+manual_assert         = { level = "allow", priority = 1 }
+ignored_unit_patterns = { level = "allow", priority = 1 }
+if_not_else           = { level = "allow", priority = 1 }

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — EwfIntegrityPath::analyse_and_compute_hashes() single-pass API.
 //!
 //! Currently RED: the method does not exist.

@@ -10,7 +10,7 @@ mod builder;
 use builder::{make_ewf2_clean_segment, make_ewf2_encrypted_segment, make_ewf2_no_hash_segment, make_ewf2_tampered_segment, E01Builder};
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, Severity};
 use md5::{Digest as _, Md5};
-use sha1::{Digest as _, Sha1};
+use sha1::Sha1;
 
 // ── Multi-segment: clean two-segment image ────────────────────────────────────
 

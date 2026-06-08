@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — EWF v2 full verification: external hashes + chunk table checksum.
 //!
 //! Fixture: tests/data/zeros_128s.Ex01

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — `--progress` CLI flag for ewf-check.
 //!
 //! Tests fail until --progress is implemented in the binary.

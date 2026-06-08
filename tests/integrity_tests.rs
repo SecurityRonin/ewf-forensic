@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod builder;
 
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, Severity};

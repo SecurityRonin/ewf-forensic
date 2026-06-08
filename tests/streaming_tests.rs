@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — streaming/mmap path-based API.
 //!
 //! Tests fail until EwfIntegrityPath is introduced and memmap2 is wired up.

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — EWF v2 stored SHA-1 hash verification.
 //!
 //! `EVF2_TYPE_SHA1_HASH` body[0..20] must be extracted and compared against the

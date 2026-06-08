@@ -11,7 +11,7 @@
 
 mod builder;
 use builder::{
-    adler32, make_ewf2_descriptor, EVF2_FILE_HEADER_SIZE, EVF2_SECTION_DESCRIPTOR_SIZE,
+    adler32, make_ewf2_descriptor, EVF2_FILE_HEADER_SIZE,
     EVF2_SECTION_TYPE_CHUNK_TABLE, EVF2_SECTION_TYPE_DONE, EVF2_SECTION_TYPE_MD5_HASH,
     EVF2_SECTION_TYPE_SHA1_HASH, EVF2_SECTION_TYPE_SHA256_HASH, EVF2_SIGNATURE,
 };
@@ -150,8 +150,6 @@ fn final_segment(
 
 fn full_image_hashes(chunks: &[&[u8]]) -> ([u8; 16], [u8; 20], [u8; 32]) {
     use md5::Digest as _;
-    use sha1::Digest as _;
-    use sha2::Digest as _;
     let mut md5_h = md5::Md5::new();
     let mut sha1_h = sha1::Sha1::new();
     let mut sha256_h = sha2::Sha256::new();

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — streaming / progress callback API.
 //!
 //! `EwfIntegrity::analyse_with_progress(f)` must call `f` at least once per
@@ -8,7 +10,7 @@
 
 mod builder;
 use builder::E01Builder;
-use ewf_forensic::{AnalysisProgress, EwfIntegrity, EwfIntegrityAnomaly};
+use ewf_forensic::{AnalysisProgress, EwfIntegrity};
 use std::path::PathBuf;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — EWF v2 compressed chunk decompression.
 //!
 //! Fixture: tests/data/zeros_128s_compressed.Ex01

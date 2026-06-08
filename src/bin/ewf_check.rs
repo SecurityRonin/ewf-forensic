@@ -114,7 +114,7 @@ fn main() {
         pb.set_style(
             ProgressStyle::default_bar()
                 .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} chunks")
-                .unwrap()
+                .unwrap_or_else(|_| ProgressStyle::default_bar())
                 .progress_chars("#>-"),
         );
         let res = checker.analyse_with_progress(|p: AnalysisProgress| {
