@@ -2,7 +2,7 @@
 
 //! RED phase — streaming/mmap path-based API.
 //!
-//! Tests fail until EwfIntegrityPath is introduced and memmap2 is wired up.
+//! Tests fail until `EwfIntegrityPath` is introduced and memmap2 is wired up.
 mod builder;
 
 use builder::E01Builder;
@@ -71,7 +71,7 @@ fn analyse_paths_two_segments_clean() {
         .with_volume_sector_count(128)
         .build();
 
-    let combined_md5: [u8; 16] = Md5::digest(&vec![0u8; chunk_size * 2]).into();
+    let combined_md5: [u8; 16] = Md5::digest(vec![0u8; chunk_size * 2]).into();
 
     let seg2 = E01Builder::new(chunk_size as u64)
         .with_segment_number(2)
@@ -107,7 +107,7 @@ fn analyse_path_auto_discovers_e02_sibling() {
         .with_volume_sector_count(128)
         .build();
 
-    let combined_md5: [u8; 16] = Md5::digest(&vec![0u8; chunk_size * 2]).into();
+    let combined_md5: [u8; 16] = Md5::digest(vec![0u8; chunk_size * 2]).into();
     let seg2_data = E01Builder::new(chunk_size as u64)
         .with_segment_number(2)
         .with_omit_volume()

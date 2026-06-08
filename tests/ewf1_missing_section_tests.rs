@@ -1,15 +1,15 @@
-//! RED phase — SectorsSectionMissing and TableSectionMissing anomalies.
+//! RED phase — `SectorsSectionMissing` and `TableSectionMissing` anomalies.
 //!
 //! A valid EWF v1 image must contain at least one `sectors` section and at
 //! least one `table` section per segment.  Currently these absences are
 //! silently ignored; no anomaly is emitted.
 //!
-//! Currently RED: neither SectorsSectionMissing nor TableSectionMissing exist.
+//! Currently RED: neither `SectorsSectionMissing` nor `TableSectionMissing` exist.
 
 mod builder;
 use builder::{
-    EVF_SIGNATURE, FILE_HEADER_SIZE, SECTION_DESCRIPTOR_SIZE, VOLUME_DATA_SIZE,
-    make_section_descriptor,
+    make_section_descriptor, EVF_SIGNATURE, FILE_HEADER_SIZE, SECTION_DESCRIPTOR_SIZE,
+    VOLUME_DATA_SIZE,
 };
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly};
 
@@ -33,15 +33,27 @@ fn e01_without_sectors_or_table() -> Vec<u8> {
     let done_off = volume_off + volume_section_size;
 
     // "header" section — 1-byte body, next → volume
-    buf.extend_from_slice(&make_section_descriptor("header", volume_off, header_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "header",
+        volume_off,
+        header_section_size,
+    ));
     buf.push(0u8); // minimal body
 
     // "volume" section — zeroed geometry, next → done
-    buf.extend_from_slice(&make_section_descriptor("volume", done_off, volume_section_size));
-    buf.extend(std::iter::repeat(0u8).take(VOLUME_DATA_SIZE));
+    buf.extend_from_slice(&make_section_descriptor(
+        "volume",
+        done_off,
+        volume_section_size,
+    ));
+    buf.extend(std::iter::repeat_n(0u8, VOLUME_DATA_SIZE));
 
     // "done" section — no body, points to itself
-    buf.extend_from_slice(&make_section_descriptor("done", done_off, done_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "done",
+        done_off,
+        done_section_size,
+    ));
 
     buf
 }
@@ -68,21 +80,37 @@ fn e01_without_table() -> Vec<u8> {
     buf.extend_from_slice(&1u16.to_le_bytes());
     buf.extend_from_slice(&0u16.to_le_bytes());
 
-    buf.extend_from_slice(&make_section_descriptor("header", volume_off, header_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "header",
+        volume_off,
+        header_section_size,
+    ));
     buf.push(0u8);
 
-    buf.extend_from_slice(&make_section_descriptor("volume", sectors_off, volume_section_size));
-    buf.extend(std::iter::repeat(0u8).take(VOLUME_DATA_SIZE));
+    buf.extend_from_slice(&make_section_descriptor(
+        "volume",
+        sectors_off,
+        volume_section_size,
+    ));
+    buf.extend(std::iter::repeat_n(0u8, VOLUME_DATA_SIZE));
 
-    buf.extend_from_slice(&make_section_descriptor("sectors", done_off, sectors_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "sectors",
+        done_off,
+        sectors_section_size,
+    ));
     buf.extend_from_slice(&sectors_body);
 
-    buf.extend_from_slice(&make_section_descriptor("done", done_off, done_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "done",
+        done_off,
+        done_section_size,
+    ));
 
     buf
 }
 
-/// A clean E01 must not produce SectorsSectionMissing or TableSectionMissing.
+/// A clean E01 must not produce `SectorsSectionMissing` or `TableSectionMissing`.
 #[test]
 fn clean_e01_has_no_missing_section_anomalies() {
     let image = builder::E01Builder::new(512 * 64).build();
@@ -101,7 +129,7 @@ fn clean_e01_has_no_missing_section_anomalies() {
     );
 }
 
-/// An E01 without a sectors section must produce SectorsSectionMissing.
+/// An E01 without a sectors section must produce `SectorsSectionMissing`.
 ///
 /// Currently RED: the analyser silently skips if sectors is absent.
 #[test]
@@ -116,7 +144,7 @@ fn e01_missing_sectors_detected() {
     );
 }
 
-/// An E01 without a table section must produce TableSectionMissing.
+/// An E01 without a table section must produce `TableSectionMissing`.
 ///
 /// Currently RED: the analyser silently skips if table is absent.
 #[test]

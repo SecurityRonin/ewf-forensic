@@ -16,14 +16,28 @@ const LVF_SIGNATURE: [u8; 8] = [0x4c, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
 const FILE_HEADER_SIZE: usize = 13;
 pub(crate) const SECTION_DESCRIPTOR_SIZE: usize = 76;
 const VOLUME_DATA_MIN: usize = 24;
-/// The standard ewf_data_t body size (per libewf). Adler-32 at byte 1048.
+/// The standard `ewf_data_t` body size (per libewf). Adler-32 at byte 1048.
 const VOLUME_DATA_FULL: usize = 1052;
-/// Valid media_type values from the ewf_data_t struct.
+/// Valid `media_type` values from the `ewf_data_t` struct.
 const VALID_MEDIA_TYPES: &[u8] = &[0x00, 0x01, 0x03, 0x0e, 0x10];
 
 const KNOWN_TYPES: &[&str] = &[
-    "header", "header2", "volume", "disk", "table", "table2", "sectors", "hash", "digest",
-    "error2", "session", "done", "next", "data", "ltree", "ltreedata",
+    "header",
+    "header2",
+    "volume",
+    "disk",
+    "table",
+    "table2",
+    "sectors",
+    "hash",
+    "digest",
+    "error2",
+    "session",
+    "done",
+    "next",
+    "data",
+    "ltree",
+    "ltreedata",
 ];
 
 // ── EWF v2 constants ─────────────────────────────────────────────────────────
@@ -44,7 +58,7 @@ const EVF2_CHUNK_TABLE_ENTRY_SIZE: usize = 16;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-/// The canonical 5-level severity scale, shared across every SecurityRonin
+/// The canonical 5-level severity scale, shared across every `SecurityRonin`
 /// analyzer via [`forensicnomicon::report`].
 pub use forensicnomicon::report::Severity;
 
@@ -156,7 +170,7 @@ pub enum EwfIntegrityAnomaly {
         expected: [u8; 20],
     },
     // ── EWF v2 ───────────────────────────────────────────────────────────────
-    /// A section's stored data_integrity_hash does not match MD5 of the section body.
+    /// A section's stored `data_integrity_hash` does not match MD5 of the section body.
     Ewf2SectionDataHashMismatch {
         offset: u64,
         section_type_id: u32,
@@ -169,20 +183,30 @@ pub enum EwfIntegrityAnomaly {
     },
     /// No MD5 or SHA-1 hash section found in the final EWF v2 segment.
     Ewf2HashSectionMissing,
-    /// Adler-32 of the 1052-byte ewf_data_t body is wrong.
+    /// Adler-32 of the 1052-byte `ewf_data_t` body is wrong.
     /// Only checked when the volume body is ≥ 1052 bytes (as in real acquisitions).
-    VolumeBodyCrcMismatch { computed: u32, stored: u32 },
-    /// `media_type` byte (offset 0 of ewf_data_t) is not a known valid value.
+    VolumeBodyCrcMismatch {
+        computed: u32,
+        stored: u32,
+    },
+    /// `media_type` byte (offset 0 of `ewf_data_t`) is not a known valid value.
     /// Valid: 0x00=removable, 0x01=fixed, 0x03=optical, 0x0e=LVF, 0x10=memory.
-    MediaTypeUnknown { media_type: u8 },
-    /// The set_identifier GUID (bytes 64-79 of ewf_data_t) differs between segments
+    MediaTypeUnknown {
+        media_type: u8,
+    },
+    /// The `set_identifier` GUID (bytes 64-79 of `ewf_data_t`) differs between segments
     /// of the same acquisition — indicates segments from different acquisitions were mixed.
-    SetIdentifierMismatch { segment: usize },
+    SetIdentifierMismatch {
+        segment: usize,
+    },
     /// No media information (device information) section found in the EWF v2 image.
     Ewf2MediaInfoMissing,
     /// The Adler-32 checksum stored at the end of the EWF v2 chunk table body does not
     /// match the Adler-32 computed over the chunk table entries.
-    Ewf2ChunkTableChecksumMismatch { computed: u32, stored: u32 },
+    Ewf2ChunkTableChecksumMismatch {
+        computed: u32,
+        stored: u32,
+    },
     /// The Adler-32 stored at the end of a chunk's byte range does not match
     /// the Adler-32 computed over the chunk's raw (possibly compressed) bytes.
     ChunkChecksumMismatch {
@@ -497,9 +521,7 @@ impl<'a> EwfIntegrity<'a> {
     /// missing geometry, or no chunk table found in an EWF v2 image).
     pub fn compute_hashes(&self) -> Option<ComputedHashes> {
         let first = self.segments.first().copied().unwrap_or(&[]);
-        if first.len() >= 8
-            && (first[0..8] == EVF2_SIGNATURE || first[0..8] == LEF2_SIGNATURE)
-        {
+        if first.len() >= 8 && (first[0..8] == EVF2_SIGNATURE || first[0..8] == LEF2_SIGNATURE) {
             return compute_hashes_ewf2(&self.segments);
         }
         compute_hashes_ewf1(&self.segments)
@@ -507,9 +529,7 @@ impl<'a> EwfIntegrity<'a> {
 
     pub fn analyse(&self) -> Vec<EwfIntegrityAnomaly> {
         let first = self.segments.first().copied().unwrap_or(&[]);
-        if first.len() >= 8
-            && (first[0..8] == EVF2_SIGNATURE || first[0..8] == LEF2_SIGNATURE)
-        {
+        if first.len() >= 8 && (first[0..8] == EVF2_SIGNATURE || first[0..8] == LEF2_SIGNATURE) {
             return self.analyse_all_ewf2();
         }
         self.analyse_all_ewf1()
@@ -527,9 +547,7 @@ impl<'a> EwfIntegrity<'a> {
         progress: impl FnMut(AnalysisProgress),
     ) -> Vec<EwfIntegrityAnomaly> {
         let first = self.segments.first().copied().unwrap_or(&[]);
-        if first.len() >= 8
-            && (first[0..8] == EVF2_SIGNATURE || first[0..8] == LEF2_SIGNATURE)
-        {
+        if first.len() >= 8 && (first[0..8] == EVF2_SIGNATURE || first[0..8] == LEF2_SIGNATURE) {
             return self.analyse_all_ewf2_with_progress(progress);
         }
         self.analyse_all_ewf1_with_progress(progress)
@@ -591,8 +609,7 @@ impl<'a> EwfIntegrity<'a> {
                     if let (Some(ref base), Some(ref later_geom)) = (&geometry, &later) {
                         let base_guid = base.set_identifier;
                         let later_guid = later_geom.set_identifier;
-                        let neither_zero =
-                            base_guid != [0u8; 16] && later_guid != [0u8; 16];
+                        let neither_zero = base_guid != [0u8; 16] && later_guid != [0u8; 16];
                         if neither_zero && base_guid != later_guid {
                             issues.push(EwfIntegrityAnomaly::SetIdentifierMismatch {
                                 segment: idx + 1,
@@ -644,7 +661,9 @@ impl<'a> EwfIntegrity<'a> {
                 let b1_end = (t1.offset + t1.size) as usize;
                 let b2_start = (t2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
                 let b2_end = (t2.offset + t2.size) as usize;
-                if let (Some(body1), Some(body2)) = (data.get(b1_start..b1_end), data.get(b2_start..b2_end)) {
+                if let (Some(body1), Some(body2)) =
+                    (data.get(b1_start..b1_end), data.get(b2_start..b2_end))
+                {
                     if body1.len() == body2.len() {
                         if let Some(offset) = body1.iter().zip(body2).position(|(a, b)| a != b) {
                             issues.push(EwfIntegrityAnomaly::Table2Mismatch { offset });
@@ -709,13 +728,16 @@ impl<'a> EwfIntegrity<'a> {
         self.analyse_all_ewf2_with_progress(|_| {})
     }
 
-    fn analyse_all_ewf2_impl(&self, progress: &mut dyn FnMut(AnalysisProgress)) -> Vec<EwfIntegrityAnomaly> {
+    fn analyse_all_ewf2_impl(
+        &self,
+        progress: &mut dyn FnMut(AnalysisProgress),
+    ) -> Vec<EwfIntegrityAnomaly> {
         let mut issues = Vec::new();
         let n = self.segments.len();
 
         // Stored hashes live in the FINAL segment and cover ALL segments' data.
-        let mut final_stored_md5:    Option<[u8; 16]> = None;
-        let mut final_stored_sha1:   Option<[u8; 20]> = None;
+        let mut final_stored_md5: Option<[u8; 16]> = None;
+        let mut final_stored_sha1: Option<[u8; 20]> = None;
         let mut final_stored_sha256: Option<[u8; 32]> = None;
 
         for (idx, &data) in self.segments.iter().enumerate() {
@@ -770,13 +792,13 @@ impl<'a> EwfIntegrity<'a> {
                 }
                 let desc = &data[desc_offset..desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE];
                 let section_type = le_u32(desc, 0);
-                let data_flags  = le_u32(desc, 4);
+                let data_flags = le_u32(desc, 4);
                 let prev_offset = le_u64(desc, 8) as usize;
-                let data_size   = le_u64(desc, 16) as usize;
+                let data_size = le_u64(desc, 16) as usize;
                 let stored_hash: [u8; 16] = array_at(desc, 32);
 
                 // Body occupies [desc_offset - data_size .. desc_offset].
-                let body_end   = desc_offset;
+                let body_end = desc_offset;
                 let body_start = desc_offset.saturating_sub(data_size);
 
                 if data_flags & EVF2_DATA_FLAG_ENCRYPTED != 0 {
@@ -862,15 +884,24 @@ impl<'a> EwfIntegrity<'a> {
 
             // Capture stored hashes from the final segment; they cover ALL segments' data.
             if idx == n - 1 {
-                final_stored_md5    = stored_sector_md5;
-                final_stored_sha1   = stored_sector_sha1;
+                final_stored_md5 = stored_sector_md5;
+                final_stored_sha1 = stored_sector_sha1;
                 final_stored_sha256 = stored_sector_sha256;
             }
 
             // Per-chunk Adler-32 verification only; stored-hash comparison happens
             // cross-segment after the loop to avoid false positives on multi-segment images.
             if let Some((ct_start, ct_end)) = chunk_table_body {
-                verify_ewf2_sector_data(data, ct_start, ct_end, None, None, None, &mut issues, progress);
+                verify_ewf2_sector_data(
+                    data,
+                    ct_start,
+                    ct_end,
+                    None,
+                    None,
+                    None,
+                    &mut issues,
+                    progress,
+                );
             }
         }
 
@@ -879,32 +910,50 @@ impl<'a> EwfIntegrity<'a> {
         if let Some(computed) = compute_hashes_ewf2(&self.segments) {
             if let Some(stored) = final_stored_md5 {
                 if computed.md5 != stored {
-                    issues.push(EwfIntegrityAnomaly::HashMismatch { computed: computed.md5, stored });
+                    issues.push(EwfIntegrityAnomaly::HashMismatch {
+                        computed: computed.md5,
+                        stored,
+                    });
                 }
             }
             if let Some(stored) = final_stored_sha1 {
                 if computed.sha1 != stored {
-                    issues.push(EwfIntegrityAnomaly::DigestSha1Mismatch { computed: computed.sha1, stored });
+                    issues.push(EwfIntegrityAnomaly::DigestSha1Mismatch {
+                        computed: computed.sha1,
+                        stored,
+                    });
                 }
             }
             if let Some(stored) = final_stored_sha256 {
                 if computed.sha256 != stored {
-                    issues.push(EwfIntegrityAnomaly::DigestSha256Mismatch { computed: computed.sha256, stored });
+                    issues.push(EwfIntegrityAnomaly::DigestSha256Mismatch {
+                        computed: computed.sha256,
+                        stored,
+                    });
                 }
             }
             if let Some(expected) = self.expected_md5 {
                 if computed.md5 != expected {
-                    issues.push(EwfIntegrityAnomaly::ExternalMd5Mismatch { computed: computed.md5, expected });
+                    issues.push(EwfIntegrityAnomaly::ExternalMd5Mismatch {
+                        computed: computed.md5,
+                        expected,
+                    });
                 }
             }
             if let Some(expected) = self.expected_sha1 {
                 if computed.sha1 != expected {
-                    issues.push(EwfIntegrityAnomaly::ExternalSha1Mismatch { computed: computed.sha1, expected });
+                    issues.push(EwfIntegrityAnomaly::ExternalSha1Mismatch {
+                        computed: computed.sha1,
+                        expected,
+                    });
                 }
             }
             if let Some(expected) = self.expected_sha256 {
                 if computed.sha256 != expected {
-                    issues.push(EwfIntegrityAnomaly::ExternalSha256Mismatch { computed: computed.sha256, expected });
+                    issues.push(EwfIntegrityAnomaly::ExternalSha256Mismatch {
+                        computed: computed.sha256,
+                        expected,
+                    });
                 }
             }
         }
@@ -929,21 +978,33 @@ impl<'a> EwfIntegrity<'a> {
             let file_size = data.len() as u64;
 
             if data.len() < FILE_HEADER_SIZE {
-                issues.push(EwfIntegrityAnomaly::SectionChainBroken { at_offset: 0, next_offset: 0 });
+                issues.push(EwfIntegrityAnomaly::SectionChainBroken {
+                    at_offset: 0,
+                    next_offset: 0,
+                });
                 all_sections.push(Vec::new());
                 continue;
             }
-            if data[0..8] != EVF_SIGNATURE && data[0..8] != DVF_SIGNATURE && data[0..8] != LVF_SIGNATURE {
+            if data[0..8] != EVF_SIGNATURE
+                && data[0..8] != DVF_SIGNATURE
+                && data[0..8] != LVF_SIGNATURE
+            {
                 issues.push(EwfIntegrityAnomaly::InvalidSignature);
             }
             let seg_num = le_u16(data, 9);
             if seg_num == 0 {
                 issues.push(EwfIntegrityAnomaly::SegmentNumberZero);
             } else if seg_num != expected_seg_num {
-                issues.push(EwfIntegrityAnomaly::SegmentOutOfOrder { segment_number: seg_num, expected: expected_seg_num });
+                issues.push(EwfIntegrityAnomaly::SegmentOutOfOrder {
+                    segment_number: seg_num,
+                    expected: expected_seg_num,
+                });
             }
             let sections = walk_sections_v1(data, &mut issues);
-            if let Some(vol_sec) = sections.iter().find(|s| s.type_name == "volume" || s.type_name == "disk") {
+            if let Some(vol_sec) = sections
+                .iter()
+                .find(|s| s.type_name == "volume" || s.type_name == "disk")
+            {
                 if idx == 0 {
                     geometry = check_volume_v1(data, vol_sec.offset, vol_sec.size, &mut issues);
                 } else {
@@ -951,15 +1012,24 @@ impl<'a> EwfIntegrity<'a> {
                     if let (Some(ref base), Some(ref later_geom)) = (&geometry, &later) {
                         let base_guid = base.set_identifier;
                         let later_guid = later_geom.set_identifier;
-                        if base_guid != [0u8; 16] && later_guid != [0u8; 16] && base_guid != later_guid {
-                            issues.push(EwfIntegrityAnomaly::SetIdentifierMismatch { segment: idx + 1 });
+                        if base_guid != [0u8; 16]
+                            && later_guid != [0u8; 16]
+                            && base_guid != later_guid
+                        {
+                            issues.push(EwfIntegrityAnomaly::SetIdentifierMismatch {
+                                segment: idx + 1,
+                            });
                         }
                     }
                 }
             } else if idx == 0 {
                 issues.push(EwfIntegrityAnomaly::VolumeSectionMissing);
             }
-            let vol_count = if !multi && idx == 0 { geometry.as_ref().map(|g| g.chunk_count) } else { None };
+            let vol_count = if !multi && idx == 0 {
+                geometry.as_ref().map(|g| g.chunk_count)
+            } else {
+                None
+            };
             let sectors_section = sections.iter().find(|s| s.type_name == "sectors");
             let sectors_range = sectors_section
                 .map(|s| (s.offset + SECTION_DESCRIPTOR_SIZE as u64, s.offset + s.size));
@@ -972,7 +1042,14 @@ impl<'a> EwfIntegrity<'a> {
                     let count = le_u32(data, data_start);
                     total_table_entries = total_table_entries.saturating_add(count);
                 }
-                check_table_v1(data, table.offset, vol_count, file_size, sectors_range, &mut issues);
+                check_table_v1(
+                    data,
+                    table.offset,
+                    vol_count,
+                    file_size,
+                    sectors_range,
+                    &mut issues,
+                );
             } else {
                 issues.push(EwfIntegrityAnomaly::TableSectionMissing);
             }
@@ -984,7 +1061,9 @@ impl<'a> EwfIntegrity<'a> {
                 let b1_end = (t1.offset + t1.size) as usize;
                 let b2_start = (t2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
                 let b2_end = (t2.offset + t2.size) as usize;
-                if let (Some(body1), Some(body2)) = (data.get(b1_start..b1_end), data.get(b2_start..b2_end)) {
+                if let (Some(body1), Some(body2)) =
+                    (data.get(b1_start..b1_end), data.get(b2_start..b2_end))
+                {
                     if body1.len() == body2.len() {
                         if let Some(offset) = body1.iter().zip(body2).position(|(a, b)| a != b) {
                             issues.push(EwfIntegrityAnomaly::Table2Mismatch { offset });
@@ -1022,9 +1101,14 @@ impl<'a> EwfIntegrity<'a> {
 
         if let Some(geom) = &geometry {
             check_hash_all_segments(
-                &self.segments, &all_sections, geom,
-                self.expected_md5, self.expected_sha1, self.expected_sha256,
-                &mut issues, &mut progress,
+                &self.segments,
+                &all_sections,
+                geom,
+                self.expected_md5,
+                self.expected_sha1,
+                self.expected_sha256,
+                &mut issues,
+                &mut progress,
             );
         }
         issues
@@ -1122,7 +1206,7 @@ struct VolumeGeometry {
     sectors_per_chunk: u32,
     bytes_per_sector: u32,
     sector_count: u64,
-    /// set_identifier GUID from ewf_data_t[64..80]; all-zero = not present.
+    /// `set_identifier` GUID from `ewf_data_t`[64..80]; all-zero = not present.
     set_identifier: [u8; 16],
 }
 
@@ -1187,12 +1271,17 @@ fn walk_sections_v1(data: &[u8], issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<S
             let gap_size = next - section_end;
             let non_zero = data
                 .get(section_end as usize..next as usize)
-                .map(|s| s.iter().any(|&b| b != 0))
-                .unwrap_or(false);
+                .is_some_and(|s| s.iter().any(|&b| b != 0));
             if non_zero {
-                issues.push(EwfIntegrityAnomaly::SectionGapNonZero { gap_offset, gap_size });
+                issues.push(EwfIntegrityAnomaly::SectionGapNonZero {
+                    gap_offset,
+                    gap_size,
+                });
             } else {
-                issues.push(EwfIntegrityAnomaly::SectionGapZero { gap_offset, gap_size });
+                issues.push(EwfIntegrityAnomaly::SectionGapZero {
+                    gap_offset,
+                    gap_size,
+                });
             }
         }
 
@@ -1559,9 +1648,9 @@ fn check_hash_all_segments(
 /// Verify EWF v2 chunk data integrity and compare overall MD5 against stored value.
 ///
 /// Chunk table entry layout (16 bytes each, starting at body offset 32):
-///   [0..8]:   file_offset (u64 LE) — absolute position of chunk data in the file
-///   [8..12]:  data_size (u32 LE) — raw_sector_bytes + 4 (Adler-32 trailer)
-/// Attempt to zlib-decompress and UTF-16LE-decode a media_info section body.
+///   [0..8]:   `file_offset` (u64 LE) — absolute position of chunk data in the file
+///   [8..12]:  `data_size` (u32 LE) — `raw_sector_bytes` + 4 (Adler-32 trailer)
+/// Attempt to zlib-decompress and UTF-16LE-decode a `media_info` section body.
 ///
 /// Returns `true` if the body is a valid zlib stream that decodes as UTF-16LE
 /// (with or without BOM), `false` on any failure.  An empty body is rejected.
@@ -1570,7 +1659,10 @@ fn parse_media_info_body(body: &[u8]) -> bool {
         return false;
     }
     let mut decompressed = Vec::new();
-    if ZlibDecoder::new(body).read_to_end(&mut decompressed).is_err() {
+    if ZlibDecoder::new(body)
+        .read_to_end(&mut decompressed)
+        .is_err()
+    {
         return false;
     }
     // Strip BOM if present
@@ -1592,7 +1684,7 @@ fn parse_media_info_body(body: &[u8]) -> bool {
 
 ///   [12..16]: flags (u32 LE) — bit 0: compressed (zlib); other bits: reserved
 ///
-/// On-disk chunk layout: [sector_data: raw_size bytes][adler32: 4 bytes][alignment pad]
+/// On-disk chunk layout: [`sector_data`: `raw_size` bytes][adler32: 4 bytes][alignment pad]
 fn verify_ewf2_sector_data(
     data: &[u8],
     ct_start: usize,
@@ -1603,10 +1695,7 @@ fn verify_ewf2_sector_data(
     issues: &mut Vec<EwfIntegrityAnomaly>,
     progress: &mut dyn FnMut(AnalysisProgress),
 ) -> Option<ComputedHashes> {
-    let tbl = match data.get(ct_start..ct_end) {
-        Some(t) => t,
-        None => return None,
-    };
+    let tbl = data.get(ct_start..ct_end)?;
     if tbl.len() < EVF2_CHUNK_TABLE_HEADER_SIZE + EVF2_CHUNK_TABLE_ENTRY_SIZE {
         return None;
     }
@@ -1625,8 +1714,8 @@ fn verify_ewf2_sector_data(
         }
     }
 
-    let mut md5_h   = Md5::new();
-    let mut sha1_h  = Sha1::new();
+    let mut md5_h = Md5::new();
+    let mut sha1_h = Sha1::new();
     let mut sha256_h = Sha256::new();
 
     for i in 0..chunk_count {
@@ -1685,13 +1774,16 @@ fn verify_ewf2_sector_data(
         });
     }
 
-    let computed_md5:    [u8; 16] = md5_h.finalize().into();
-    let computed_sha1:   [u8; 20] = sha1_h.finalize().into();
+    let computed_md5: [u8; 16] = md5_h.finalize().into();
+    let computed_sha1: [u8; 20] = sha1_h.finalize().into();
     let computed_sha256: [u8; 32] = sha256_h.finalize().into();
 
     if let Some(stored) = stored_md5 {
         if computed_md5 != stored {
-            issues.push(EwfIntegrityAnomaly::HashMismatch { computed: computed_md5, stored });
+            issues.push(EwfIntegrityAnomaly::HashMismatch {
+                computed: computed_md5,
+                stored,
+            });
         }
     }
 
@@ -1713,13 +1805,17 @@ fn verify_ewf2_sector_data(
         }
     }
 
-    Some(ComputedHashes { md5: computed_md5, sha1: computed_sha1, sha256: computed_sha256 })
+    Some(ComputedHashes {
+        md5: computed_md5,
+        sha1: computed_sha1,
+        sha256: computed_sha256,
+    })
 }
 
 /// Extract sector-data hashes from EWF v2 segments without full anomaly checking.
 fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
-    let mut md5_h   = Md5::new();
-    let mut sha1_h  = Sha1::new();
+    let mut md5_h = Md5::new();
+    let mut sha1_h = Sha1::new();
     let mut sha256_h = Sha256::new();
     let mut found_chunks = false;
 
@@ -1740,19 +1836,19 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
             }
             let desc = &data[desc_offset..desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE];
             let section_type = le_u32(desc, 0);
-            let data_flags   = le_u32(desc, 4);
-            let prev_offset  = le_u64(desc, 8) as usize;
-            let data_size    = le_u64(desc, 16) as usize;
-            let body_end   = desc_offset;
+            let data_flags = le_u32(desc, 4);
+            let prev_offset = le_u64(desc, 8) as usize;
+            let data_size = le_u64(desc, 16) as usize;
+            let body_end = desc_offset;
             let body_start = desc_offset.saturating_sub(data_size);
 
-            if data_flags & EVF2_DATA_FLAG_ENCRYPTED == 0
-                && section_type == EVF2_TYPE_CHUNK_TABLE
-            {
+            if data_flags & EVF2_DATA_FLAG_ENCRYPTED == 0 && section_type == EVF2_TYPE_CHUNK_TABLE {
                 chunk_table_body = Some((body_start, body_end));
             }
 
-            if prev_offset == 0 { break; }
+            if prev_offset == 0 {
+                break;
+            }
             desc_offset = prev_offset;
         }
 
@@ -1771,7 +1867,9 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
 
         for i in 0..chunk_count {
             let entry_off = EVF2_CHUNK_TABLE_HEADER_SIZE + i * EVF2_CHUNK_TABLE_ENTRY_SIZE;
-            if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() { break; }
+            if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() {
+                break;
+            }
             let file_offset = le_u64(tbl, entry_off) as usize;
             let chunk_data_size = le_u32(tbl, entry_off + 8) as usize;
             let flags = le_u32(tbl, entry_off + 12);
@@ -1805,8 +1903,8 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
         return None;
     }
     Some(ComputedHashes {
-        md5:    md5_h.finalize().into(),
-        sha1:   sha1_h.finalize().into(),
+        md5: md5_h.finalize().into(),
+        sha1: sha1_h.finalize().into(),
         sha256: sha256_h.finalize().into(),
     })
 }
@@ -1818,7 +1916,8 @@ fn compute_hashes_ewf1(segments: &[&[u8]]) -> Option<ComputedHashes> {
     if first.len() < FILE_HEADER_SIZE {
         return None;
     }
-    if first[0..8] != EVF_SIGNATURE && first[0..8] != DVF_SIGNATURE && first[0..8] != LVF_SIGNATURE {
+    if first[0..8] != EVF_SIGNATURE && first[0..8] != DVF_SIGNATURE && first[0..8] != LVF_SIGNATURE
+    {
         return None;
     }
 
@@ -1893,7 +1992,6 @@ pub(crate) fn adler32(data: &[u8]) -> u32 {
     }
     (s2 << 16) | s1
 }
-
 
 impl EwfIntegrityAnomaly {
     /// Stable, scheme-prefixed machine code for this anomaly.

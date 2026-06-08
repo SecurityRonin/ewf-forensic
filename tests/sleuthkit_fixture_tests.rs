@@ -6,7 +6,7 @@
 //!
 //!   bogus.E01             — github.com/sleuthkit/sleuthkit test/data (0 bytes; committed)
 //!   bogus.E02             — github.com/sleuthkit/sleuthkit test/data (0 bytes; committed)
-//!   gpt_130_partitions.E01 — github.com/sleuthkit/sleuthkit test/data (384 KB; committed)
+//!   `gpt_130_partitions.E01` — github.com/sleuthkit/sleuthkit test/data (384 KB; committed)
 //!
 //! bogus.E01 / bogus.E02 are intentionally empty (0 bytes) — the sleuthkit test
 //! suite uses them to exercise error paths in tools that open EWF files.  Both
@@ -21,7 +21,7 @@
 //! specific structural invariant that was violated; ewfverify's output is a
 //! libewf open error.
 //!
-//! gpt_130_partitions.E01 is a structurally valid EWF v1 image containing a GPT
+//! `gpt_130_partitions.E01` is a structurally valid EWF v1 image containing a GPT
 //! partition table with 130 partitions.  Both tools report clean.
 
 use ewf_forensic::{EwfIntegrityPath, Severity};
@@ -112,7 +112,9 @@ fn fixture(name: &str) -> PathBuf {
 /// is machine-readable via --json; ewfverify's failure mode is text-only.
 #[test]
 fn bogus_e01_both_report_invalid() {
-    let Some(r) = run_differential(&fixture("bogus.E01")) else { return };
+    let Some(r) = run_differential(&fixture("bogus.E01")) else {
+        return;
+    };
 
     // ewfverify rejects the file — cannot open a 0-byte EWF.
     assert!(
@@ -154,7 +156,9 @@ fn bogus_e01_both_report_invalid() {
 /// Behaviour is identical to bogus.E01: both tools reject it.
 #[test]
 fn bogus_e02_both_report_invalid() {
-    let Some(r) = run_differential(&fixture("bogus.E02")) else { return };
+    let Some(r) = run_differential(&fixture("bogus.E02")) else {
+        return;
+    };
 
     assert!(
         !r.ewfverify_clean(),
@@ -183,7 +187,7 @@ fn bogus_e02_both_report_invalid() {
 
 // ── gpt_130_partitions.E01 — valid EWF, both tools clean ─────────────────────
 
-/// gpt_130_partitions.E01 from github.com/sleuthkit/sleuthkit (test/data/).
+/// `gpt_130_partitions.E01` from github.com/sleuthkit/sleuthkit (test/data/).
 ///
 /// A structurally valid EWF v1 image containing a GPT partition table with
 /// 130 partitions.  Used in the sleuthkit suite to exercise partition-table
@@ -193,7 +197,9 @@ fn bogus_e02_both_report_invalid() {
 /// ewf-forensic: CLEAN (0 anomalies at any severity).
 #[test]
 fn gpt_130_partitions_both_clean() {
-    let Some(r) = run_differential(&fixture("gpt_130_partitions.E01")) else { return };
+    let Some(r) = run_differential(&fixture("gpt_130_partitions.E01")) else {
+        return;
+    };
 
     assert!(
         r.ewfverify_clean(),

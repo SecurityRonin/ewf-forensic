@@ -1,16 +1,16 @@
 //! RED phase — EWF v2 unsupported compression algorithm detection.
 //!
 //! The EWF v2 file header bytes [10..12] (u16 LE) specify the compression
-//! algorithm.  Currently only deflate/zlib (method_id 0 or 1) is supported.
-//! A non-zero/non-deflate method_id (e.g. bzip2=2, lzma=3) should produce
-//! `UnsupportedCompressionAlgorithm` instead of a confusing ChunkDecompressionError.
+//! algorithm.  Currently only deflate/zlib (`method_id` 0 or 1) is supported.
+//! A non-zero/non-deflate `method_id` (e.g. bzip2=2, lzma=3) should produce
+//! `UnsupportedCompressionAlgorithm` instead of a confusing `ChunkDecompressionError`.
 //!
-//! Currently RED: the compression_method field is never read.
+//! Currently RED: the `compression_method` field is never read.
 
 mod builder;
 use builder::{
-    adler32, make_ewf2_descriptor, EVF2_SIGNATURE, EVF2_FILE_HEADER_SIZE,
-    EVF2_SECTION_TYPE_CHUNK_TABLE, EVF2_SECTION_TYPE_MD5_HASH, EVF2_SECTION_TYPE_DONE,
+    adler32, make_ewf2_descriptor, EVF2_FILE_HEADER_SIZE, EVF2_SECTION_TYPE_CHUNK_TABLE,
+    EVF2_SECTION_TYPE_DONE, EVF2_SECTION_TYPE_MD5_HASH, EVF2_SIGNATURE,
 };
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly};
 
@@ -50,36 +50,49 @@ fn make_segment_with_compression_method(method_id: u16, chunk_data: &[u8]) -> Ve
 
     let ct_desc_off = buf.len() as u64;
     buf.extend_from_slice(&make_ewf2_descriptor(
-        EVF2_SECTION_TYPE_CHUNK_TABLE, 0, 0, ct_body_len, [0u8; 16],
+        EVF2_SECTION_TYPE_CHUNK_TABLE,
+        0,
+        0,
+        ct_body_len,
+        [0u8; 16],
     ));
 
     buf.extend_from_slice(&[0u8; 16]); // MD5 body
     let md5_desc_off = buf.len() as u64;
     buf.extend_from_slice(&make_ewf2_descriptor(
-        EVF2_SECTION_TYPE_MD5_HASH, 0, ct_desc_off, 16, [0u8; 16],
+        EVF2_SECTION_TYPE_MD5_HASH,
+        0,
+        ct_desc_off,
+        16,
+        [0u8; 16],
     ));
 
     buf.extend_from_slice(&make_ewf2_descriptor(
-        EVF2_SECTION_TYPE_DONE, 0, md5_desc_off, 0, [0u8; 16],
+        EVF2_SECTION_TYPE_DONE,
+        0,
+        md5_desc_off,
+        0,
+        [0u8; 16],
     ));
 
     buf
 }
 
-/// compression_method=0 (deflate/none) must not produce UnsupportedCompressionAlgorithm.
+/// `compression_method=0` (deflate/none) must not produce `UnsupportedCompressionAlgorithm`.
 #[test]
 fn compression_method_zero_no_anomaly() {
     let seg = make_segment_with_compression_method(0, &[0u8; 512]);
     let findings = EwfIntegrity::new(&seg).analyse();
     assert!(
-        !findings
-            .iter()
-            .any(|a| matches!(a, EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { .. })),
+        !findings.iter().any(|a| matches!(
+            a,
+            EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { .. }
+        )),
         "method=0 (deflate) must not produce UnsupportedCompressionAlgorithm; got: {findings:#?}"
     );
 }
 
-/// compression_method=2 (bzip2) must produce UnsupportedCompressionAlgorithm.
+/// `compression_method=2` (bzip2) must produce `UnsupportedCompressionAlgorithm`.
 ///
 /// Currently RED: the field is never checked.
 #[test]
@@ -87,23 +100,27 @@ fn compression_method_bzip2_detected() {
     let seg = make_segment_with_compression_method(2, &[0u8; 512]);
     let findings = EwfIntegrity::new(&seg).analyse();
     assert!(
-        findings
-            .iter()
-            .any(|a| matches!(a, EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { .. })),
+        findings.iter().any(|a| matches!(
+            a,
+            EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { .. }
+        )),
         "method=2 (bzip2) must produce UnsupportedCompressionAlgorithm; got: {findings:#?}"
     );
 }
 
-/// UnsupportedCompressionAlgorithm must report the correct method_id.
+/// `UnsupportedCompressionAlgorithm` must report the correct `method_id`.
 ///
 /// Currently RED: anomaly never fires.
 #[test]
 fn compression_method_reports_correct_id() {
     let seg = make_segment_with_compression_method(3, &[0u8; 512]);
     let findings = EwfIntegrity::new(&seg).analyse();
-    let anomaly = findings
-        .iter()
-        .find(|a| matches!(a, EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { .. }));
+    let anomaly = findings.iter().find(|a| {
+        matches!(
+            a,
+            EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { .. }
+        )
+    });
     if let Some(EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { method_id }) = anomaly {
         assert_eq!(*method_id, 3, "method_id must equal the file header value");
     } else {

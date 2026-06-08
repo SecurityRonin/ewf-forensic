@@ -4,18 +4,18 @@
 //! acquisition tools.  When present, it must be byte-identical to `table`.
 //! A mismatch indicates partial corruption of one of the copies.
 //!
-//! Currently RED: table2 is in KNOWN_TYPES but never compared to table.
+//! Currently RED: table2 is in `KNOWN_TYPES` but never compared to table.
 
 mod builder;
 use builder::{
-    EVF_SIGNATURE, FILE_HEADER_SIZE, SECTION_DESCRIPTOR_SIZE, VOLUME_DATA_SIZE,
-    make_section_descriptor,
+    make_section_descriptor, EVF_SIGNATURE, FILE_HEADER_SIZE, SECTION_DESCRIPTOR_SIZE,
+    VOLUME_DATA_SIZE,
 };
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly};
 
 const TABLE_DATA_SIZE: usize = 24 + 4; // header(24) + one entry(4) for a single chunk
 
-/// Build a minimal E01 with: file_header, header, volume, table, sectors,
+/// Build a minimal E01 with: `file_header`, header, volume, table, sectors,
 /// table2 (with `table2_body`), hash, done.
 ///
 /// The table body has one entry pointing to the sectors data start.
@@ -53,7 +53,7 @@ fn e01_with_table2(table2_body: &[u8]) -> Vec<u8> {
 
     // volume section (zeroed — no chunk count verification in this test)
     buf.extend_from_slice(&make_section_descriptor("volume", table_off, volume_sz));
-    buf.extend(std::iter::repeat(0u8).take(VOLUME_DATA_SIZE));
+    buf.extend(std::iter::repeat_n(0u8, VOLUME_DATA_SIZE));
 
     // table section body: 24-byte header (zeros) + one 4-byte entry
     let table_body: Vec<u8> = {
@@ -95,7 +95,7 @@ fn matching_table_body() -> Vec<u8> {
     v
 }
 
-/// When table and table2 have identical bodies, no Table2Mismatch is emitted.
+/// When table and table2 have identical bodies, no `Table2Mismatch` is emitted.
 #[test]
 fn table2_matching_no_anomaly() {
     let body = matching_table_body();
@@ -109,7 +109,7 @@ fn table2_matching_no_anomaly() {
     );
 }
 
-/// When table2 body differs from table, Table2Mismatch must be emitted.
+/// When table2 body differs from table, `Table2Mismatch` must be emitted.
 ///
 /// Currently RED: table2 is never compared to table.
 #[test]
@@ -128,7 +128,7 @@ fn table2_mismatch_detected() {
     );
 }
 
-/// A clean E01 without table2 must not produce Table2Mismatch.
+/// A clean E01 without table2 must not produce `Table2Mismatch`.
 #[test]
 fn clean_e01_no_table2_anomaly() {
     let image = builder::E01Builder::new(512 * 64).build();

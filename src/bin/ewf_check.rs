@@ -1,4 +1,6 @@
-use ewf_forensic::{AnalysisProgress, ComputedHashes, EwfIntegrityAnomaly, EwfIntegrityPath, Severity};
+use ewf_forensic::{
+    AnalysisProgress, ComputedHashes, EwfIntegrityAnomaly, EwfIntegrityPath, Severity,
+};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::process;
@@ -105,9 +107,15 @@ fn main() {
     } else {
         EwfIntegrityPath::from_paths(&paths)
     };
-    if let Some(h) = hash_md5 { checker = checker.with_expected_md5(h); }
-    if let Some(h) = hash_sha1 { checker = checker.with_expected_sha1(h); }
-    if let Some(h) = hash_sha256 { checker = checker.with_expected_sha256(h); }
+    if let Some(h) = hash_md5 {
+        checker = checker.with_expected_md5(h);
+    }
+    if let Some(h) = hash_sha1 {
+        checker = checker.with_expected_sha1(h);
+    }
+    if let Some(h) = hash_sha256 {
+        checker = checker.with_expected_sha256(h);
+    }
 
     let analysis_result: std::io::Result<Vec<_>> = if show_progress {
         let pb = ProgressBar::new(0);
@@ -179,12 +187,15 @@ fn main() {
         }
     }
 
-    process::exit(if visible.is_empty() { 0 } else { 1 });
+    process::exit(i32::from(!visible.is_empty()));
 }
 
 fn print_text(visible: &[&EwfIntegrityAnomaly], min_severity: &Severity) {
     if visible.is_empty() {
-        println!("clean — 0 anomalies at or above {}", severity_label(min_severity));
+        println!(
+            "clean — 0 anomalies at or above {}",
+            severity_label(min_severity)
+        );
         return;
     }
     println!("{} anomaly/anomalies found:\n", visible.len());
@@ -201,13 +212,15 @@ fn print_text(visible: &[&EwfIntegrityAnomaly], min_severity: &Severity) {
     }
 }
 
-fn print_json(visible: &[&EwfIntegrityAnomaly], _min_severity: &Severity, hashes: Option<&ComputedHashes>) {
+fn print_json(
+    visible: &[&EwfIntegrityAnomaly],
+    _min_severity: &Severity,
+    hashes: Option<&ComputedHashes>,
+) {
     let clean = visible.is_empty();
     let count = visible.len();
-    let mut out = format!(
-        "{{\n  \"clean\": {},\n  \"anomaly_count\": {},\n  \"anomalies\": [",
-        clean, count
-    );
+    let mut out =
+        format!("{{\n  \"clean\": {clean},\n  \"anomaly_count\": {count},\n  \"anomalies\": [");
     for (i, anomaly) in visible.iter().enumerate() {
         let sep = if i == 0 { "\n" } else { ",\n" };
         out.push_str(&format!(
@@ -221,7 +234,7 @@ fn print_json(visible: &[&EwfIntegrityAnomaly], _min_severity: &Severity, hashes
     if !visible.is_empty() {
         out.push_str("\n  ");
     }
-    out.push_str("]");
+    out.push(']');
     if let Some(h) = hashes {
         out.push_str(&format!(
             ",\n  \"hashes\": {{\n    \"md5\": \"{}\",\n    \"sha1\": \"{}\",\n    \"sha256\": \"{}\"\n  }}",
@@ -252,7 +265,9 @@ fn anomaly_kind(a: &EwfIntegrityAnomaly) -> &'static str {
         EwfIntegrityAnomaly::TableChunkCountMismatch { .. } => "TableChunkCountMismatch",
         EwfIntegrityAnomaly::TableHeaderAdler32Mismatch { .. } => "TableHeaderAdler32Mismatch",
         EwfIntegrityAnomaly::TableEntryOutOfBounds { .. } => "TableEntryOutOfBounds",
-        EwfIntegrityAnomaly::TableEntryOutsideSectorsRange { .. } => "TableEntryOutsideSectorsRange",
+        EwfIntegrityAnomaly::TableEntryOutsideSectorsRange { .. } => {
+            "TableEntryOutsideSectorsRange"
+        }
         EwfIntegrityAnomaly::SectionGapZero { .. } => "SectionGapZero",
         EwfIntegrityAnomaly::HashMismatch { .. } => "HashMismatch",
         EwfIntegrityAnomaly::HashSectionMissing => "HashSectionMissing",
@@ -271,10 +286,14 @@ fn anomaly_kind(a: &EwfIntegrityAnomaly) -> &'static str {
         EwfIntegrityAnomaly::MediaTypeUnknown { .. } => "MediaTypeUnknown",
         EwfIntegrityAnomaly::SetIdentifierMismatch { .. } => "SetIdentifierMismatch",
         EwfIntegrityAnomaly::Ewf2MediaInfoMissing => "Ewf2MediaInfoMissing",
-        EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch { .. } => "Ewf2ChunkTableChecksumMismatch",
+        EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch { .. } => {
+            "Ewf2ChunkTableChecksumMismatch"
+        }
         EwfIntegrityAnomaly::ChunkChecksumMismatch { .. } => "ChunkChecksumMismatch",
         EwfIntegrityAnomaly::ChunkDecompressionError { .. } => "ChunkDecompressionError",
-        EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { .. } => "UnsupportedCompressionAlgorithm",
+        EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm { .. } => {
+            "UnsupportedCompressionAlgorithm"
+        }
         EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed => "Ewf2MediaInfoParseFailed",
     }
 }
@@ -307,12 +326,11 @@ fn parse_hex_fixed<const N: usize>(hex: &str, flag: &str) -> [u8; N] {
     let mut out = [0u8; N];
     for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
         let s = std::str::from_utf8(chunk).unwrap_or("??");
-        match u8::from_str_radix(s, 16) {
-            Ok(b) => out[i] = b,
-            Err(_) => {
-                eprintln!("error: {flag} contains invalid hex character in '{s}'");
-                process::exit(2);
-            }
+        if let Ok(b) = u8::from_str_radix(s, 16) {
+            out[i] = b
+        } else {
+            eprintln!("error: {flag} contains invalid hex character in '{s}'");
+            process::exit(2);
         }
     }
     out

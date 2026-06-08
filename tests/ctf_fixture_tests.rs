@@ -4,7 +4,7 @@
 //!
 //! Sources:
 //!
-//!   ctf_file6.E01          — github.com/mfput/CTF-Questions (committed; 156 KB)
+//!   `ctf_file6.E01`          — github.com/mfput/CTF-Questions (committed; 156 KB)
 //!   2011-10-19-Sample.E01  — github.com/oddin-forensic/autopsy-sample-case (not committed; 60 MB)
 //!   CNC.E01                — github.com/HaxonicOfficial/CTF-Practice (not committed; 88 MB)
 //!
@@ -13,13 +13,13 @@
 //!   python3 -c "
 //!   import urllib.request
 //!   urllib.request.urlretrieve(
-//!       'https://raw.githubusercontent.com/oddin-forensic/autopsy-sample-case/master/2011-10-19-Sample.E01',
+//!       '<https://raw.githubusercontent.com/oddin-forensic/autopsy-sample-case/master/2011-10-19-Sample.E01>',
 //!       'tests/data/2011-10-19-Sample.E01')
 //!   urllib.request.urlretrieve(
-//!       'https://raw.githubusercontent.com/HaxonicOfficial/CTF-Practice/master/CNC.E01',
+//!       '<https://raw.githubusercontent.com/HaxonicOfficial/CTF-Practice/master/CNC.E01>',
 //!       'tests/data/CNC.E01')
 //!   "
-//!   cargo test --test ctf_fixture_tests -- --ignored
+//!   cargo test --test `ctf_fixture_tests` -- --ignored
 
 use ewf_forensic::{EwfIntegrityPath, Severity};
 use std::path::{Path, PathBuf};
@@ -90,19 +90,25 @@ fn fixture(name: &str) -> PathBuf {
 
 fn optional_fixture(name: &str) -> Option<PathBuf> {
     let p = fixture(name);
-    if p.exists() { Some(p) } else { None }
+    if p.exists() {
+        Some(p)
+    } else {
+        None
+    }
 }
 
 // ── Always-on: both tools agree on small committed CTF fixture ────────────────
 
-/// ctf_file6.E01 from github.com/mfput/CTF-Questions.
+/// `ctf_file6.E01` from github.com/mfput/CTF-Questions.
 ///
 /// ewfverify: SUCCESS (exit 0).
 /// ewf-forensic: CLEAN (0 anomalies at any severity).
 /// No divergence.
 #[test]
 fn ctf_file6_both_clean() {
-    let Some(r) = run_differential(&fixture("ctf_file6.E01")) else { return };
+    let Some(r) = run_differential(&fixture("ctf_file6.E01")) else {
+        return;
+    };
     assert!(
         r.ewfverify_clean(),
         "ewfverify must report SUCCESS for ctf_file6; output={}",
@@ -122,34 +128,35 @@ fn ctf_file6_both_clean() {
 
 // ── Ignored: large files — download to tests/data/ before running ─────────────
 
-/// 2011-10-19-Sample.E01 — Autopsy sample "Victor Bushell Laptop" (60 MB, EnCase 7).
+/// 2011-10-19-Sample.E01 — Autopsy sample "Victor Bushell Laptop" (60 MB, `EnCase` 7).
 /// Source: github.com/oddin-forensic/autopsy-sample-case
 ///
 /// Documented characterisation difference: ewfverify ignores the error2 section
-/// and reports SUCCESS. ewf-forensic correctly surfaces BadSectorsPresent (Warning)
+/// and reports SUCCESS. ewf-forensic correctly surfaces `BadSectorsPresent` (Warning)
 /// because 1 unreadable sector range was recorded at acquisition time.
 ///
 /// This is NOT a false positive in ewf-forensic — the warning is accurate.
 /// It documents a gap in ewfverify: acquisitions with bad sectors are reported as
 /// SUCCESS without any mention of the unreadable sector record.
 ///
-/// Run: cargo test --test ctf_fixture_tests ctf_autopsy_sample -- --ignored
+/// Run: cargo test --test `ctf_fixture_tests` `ctf_autopsy_sample` -- --ignored
 #[test]
 #[ignore = "60 MB — download to tests/data/2011-10-19-Sample.E01 before running"]
 fn ctf_autopsy_sample_ewfverify_misses_bad_sectors() {
-    let path = match optional_fixture("2011-10-19-Sample.E01") {
-        Some(p) => p,
-        None => {
-            eprintln!(
-                "SKIP: tests/data/2011-10-19-Sample.E01 not found. \
-                 Download from: https://raw.githubusercontent.com/oddin-forensic/\
-                 autopsy-sample-case/master/2011-10-19-Sample.E01"
-            );
-            return;
-        }
+    let path = if let Some(p) = optional_fixture("2011-10-19-Sample.E01") {
+        p
+    } else {
+        eprintln!(
+            "SKIP: tests/data/2011-10-19-Sample.E01 not found. \
+             Download from: https://raw.githubusercontent.com/oddin-forensic/\
+             autopsy-sample-case/master/2011-10-19-Sample.E01"
+        );
+        return;
     };
 
-    let Some(r) = run_differential(&path) else { return };
+    let Some(r) = run_differential(&path) else {
+        return;
+    };
 
     // ewfverify reports SUCCESS despite acquisition-time bad sectors.
     assert!(
@@ -179,7 +186,7 @@ fn ctf_autopsy_sample_ewfverify_misses_bad_sectors() {
     );
 }
 
-/// CNC.E01 — HaxonicOfficial CTF Practice image (88 MB, FTK Imager).
+/// CNC.E01 — `HaxonicOfficial` CTF Practice image (88 MB, FTK Imager).
 /// Source: github.com/HaxonicOfficial/CTF-Practice
 ///
 /// Coverage difference (D3): the volume section declares 61 440 chunks (~1.8 GiB)
@@ -191,27 +198,28 @@ fn ctf_autopsy_sample_ewfverify_misses_bad_sectors() {
 /// sectors → exits SUCCESS. It does not check whether volume and table agree.
 ///
 /// ewf-forensic detects:
-///   TableChunkCountMismatch { in_volume: 61440, in_table: 16375 }   [Error]
-///   HashMismatch (computed over full declared range)                 [Error]
-///   DigestSha1Mismatch                                               [Error]
+///   `TableChunkCountMismatch` { `in_volume`: 61440, `in_table`: 16375 }   [Error]
+///   `HashMismatch` (computed over full declared range)                 [Error]
+///   `DigestSha1Mismatch`                                               [Error]
 ///
-/// Run: cargo test --test ctf_fixture_tests ctf_cnc -- --ignored
+/// Run: cargo test --test `ctf_fixture_tests` `ctf_cnc` -- --ignored
 #[test]
 #[ignore = "88 MB — download to tests/data/CNC.E01 before running"]
 fn ctf_cnc_ewfverify_false_negative_table_mismatch() {
-    let path = match optional_fixture("CNC.E01") {
-        Some(p) => p,
-        None => {
-            eprintln!(
-                "SKIP: tests/data/CNC.E01 not found. \
-                 Download from: https://raw.githubusercontent.com/HaxonicOfficial/\
-                 CTF-Practice/master/CNC.E01"
-            );
-            return;
-        }
+    let path = if let Some(p) = optional_fixture("CNC.E01") {
+        p
+    } else {
+        eprintln!(
+            "SKIP: tests/data/CNC.E01 not found. \
+             Download from: https://raw.githubusercontent.com/HaxonicOfficial/\
+             CTF-Practice/master/CNC.E01"
+        );
+        return;
     };
 
-    let Some(r) = run_differential(&path) else { return };
+    let Some(r) = run_differential(&path) else {
+        return;
+    };
 
     // ewfverify does not check table/volume consistency — reports SUCCESS.
     assert!(
@@ -234,8 +242,8 @@ fn ctf_cnc_ewfverify_false_negative_table_mismatch() {
     );
 
     // ewf-forensic must also detect hash inconsistency (hashing over declared size diverges).
-    let has_hash_error = r.has_anomaly_containing("mismatch")
-        || r.has_anomaly_containing("HashMismatch");
+    let has_hash_error =
+        r.has_anomaly_containing("mismatch") || r.has_anomaly_containing("HashMismatch");
     assert!(
         has_hash_error,
         "ewf-forensic must report hash mismatch for the partial image; anomalies={:?}",

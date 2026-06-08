@@ -6,14 +6,14 @@
 //! so it hashes only that segment's chunks and compares against the full-image
 //! stored hash — producing false-positive mismatches on correct multi-segment images.
 //!
-//! Currently RED: first test fires spurious HashMismatch / DigestSha1Mismatch /
-//! DigestSha256Mismatch even though the stored hashes are correct.
+//! Currently RED: first test fires spurious `HashMismatch` / `DigestSha1Mismatch` /
+//! `DigestSha256Mismatch` even though the stored hashes are correct.
 
 mod builder;
 use builder::{
-    adler32, make_ewf2_descriptor, EVF2_FILE_HEADER_SIZE,
-    EVF2_SECTION_TYPE_CHUNK_TABLE, EVF2_SECTION_TYPE_DONE, EVF2_SECTION_TYPE_MD5_HASH,
-    EVF2_SECTION_TYPE_SHA1_HASH, EVF2_SECTION_TYPE_SHA256_HASH, EVF2_SIGNATURE,
+    adler32, make_ewf2_descriptor, EVF2_FILE_HEADER_SIZE, EVF2_SECTION_TYPE_CHUNK_TABLE,
+    EVF2_SECTION_TYPE_DONE, EVF2_SECTION_TYPE_MD5_HASH, EVF2_SECTION_TYPE_SHA1_HASH,
+    EVF2_SECTION_TYPE_SHA256_HASH, EVF2_SIGNATURE,
 };
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly};
 
@@ -173,8 +173,7 @@ fn full_image_hashes(chunks: &[&[u8]]) -> ([u8; 16], [u8; 20], [u8; 32]) {
 fn ewf2_multiseg_correct_hashes_no_mismatch() {
     let data1 = vec![0u8; 512];
     let data2 = vec![1u8; 512];
-    let (full_md5, full_sha1, full_sha256) =
-        full_image_hashes(&[&data1, &data2]);
+    let (full_md5, full_sha1, full_sha256) = full_image_hashes(&[&data1, &data2]);
 
     let seg1 = nonfinal_segment(1, &data1);
     let seg2 = final_segment(2, &data2, full_md5, full_sha1, full_sha256);

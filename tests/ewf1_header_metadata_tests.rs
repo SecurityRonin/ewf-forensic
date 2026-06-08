@@ -3,12 +3,13 @@
 mod builder;
 
 use builder::{
-    EVF_SIGNATURE, FILE_HEADER_SIZE, SECTION_DESCRIPTOR_SIZE, VOLUME_DATA_SIZE,
-    make_section_descriptor, adler32,
+    adler32, make_section_descriptor, EVF_SIGNATURE, FILE_HEADER_SIZE, SECTION_DESCRIPTOR_SIZE,
+    VOLUME_DATA_SIZE,
 };
 use ewf_forensic::EwfIntegrity;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use md5::{Digest as _, Md5};
 use std::io::Write as _;
 
 fn compress_header(text: &str) -> Vec<u8> {
@@ -49,7 +50,11 @@ fn build_e01_with_header_body(header_body: &[u8]) -> Vec<u8> {
     buf.extend_from_slice(&0u16.to_le_bytes()); // fields_end
 
     // Header section
-    buf.extend_from_slice(&make_section_descriptor("header", volume_desc_off, header_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "header",
+        volume_desc_off,
+        header_section_size,
+    ));
     buf.extend_from_slice(header_body);
 
     // Volume section
@@ -59,7 +64,11 @@ fn build_e01_with_header_body(header_body: &[u8]) -> Vec<u8> {
     vol[8..12].copy_from_slice(&1u32.to_le_bytes()); // sectors_per_chunk = 1
     vol[12..16].copy_from_slice(&512u32.to_le_bytes()); // bytes_per_sector = 512
     vol[16..24].copy_from_slice(&1u64.to_le_bytes()); // sector_count = 1
-    buf.extend_from_slice(&make_section_descriptor("volume", table_desc_off, volume_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "volume",
+        table_desc_off,
+        volume_section_size,
+    ));
     buf.extend_from_slice(&vol);
 
     // Table section
@@ -71,24 +80,39 @@ fn build_e01_with_header_body(header_body: &[u8]) -> Vec<u8> {
     tbl[16..20].copy_from_slice(&tbl_adler.to_le_bytes());
     // entry: offset 0 relative to base
     tbl[24..28].copy_from_slice(&0u32.to_le_bytes());
-    buf.extend_from_slice(&make_section_descriptor("table", sectors_desc_off, table_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "table",
+        sectors_desc_off,
+        table_section_size,
+    ));
     buf.extend_from_slice(&tbl);
 
     // Sectors section
     let sectors_data = vec![0u8; chunk_size];
-    buf.extend_from_slice(&make_section_descriptor("sectors", hash_desc_off, sectors_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "sectors",
+        hash_desc_off,
+        sectors_section_size,
+    ));
     buf.extend_from_slice(&sectors_data);
 
     // Hash section (MD5 of sectors data)
     let mut hash_body = [0u8; 16];
-    use md5::{Digest as _, Md5};
     let computed: [u8; 16] = Md5::digest(&sectors_data).into();
     hash_body.copy_from_slice(&computed);
-    buf.extend_from_slice(&make_section_descriptor("hash", done_desc_off, hash_section_size));
+    buf.extend_from_slice(&make_section_descriptor(
+        "hash",
+        done_desc_off,
+        hash_section_size,
+    ));
     buf.extend_from_slice(&hash_body);
 
     // Done section (next == self)
-    buf.extend_from_slice(&make_section_descriptor("done", done_desc_off, SECTION_DESCRIPTOR_SIZE as u64));
+    buf.extend_from_slice(&make_section_descriptor(
+        "done",
+        done_desc_off,
+        SECTION_DESCRIPTOR_SIZE as u64,
+    ));
 
     buf
 }
@@ -130,8 +154,7 @@ fn header_metadata_multi_segment_uses_first() {
     // Second segment: invalid (0u8) header body
     let seg2 = build_e01_with_header_body(&[0u8]);
 
-    let result = EwfIntegrity::from_segments(&[seg1.as_slice(), seg2.as_slice()])
-        .header_metadata();
+    let result = EwfIntegrity::from_segments(&[seg1.as_slice(), seg2.as_slice()]).header_metadata();
 
     assert!(result.is_some(), "expected Some from first segment");
     let meta = result.unwrap();

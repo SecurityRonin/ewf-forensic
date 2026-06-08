@@ -11,10 +11,7 @@ use std::process::Command;
 use tempfile::NamedTempFile;
 
 fn write_temp(data: &[u8], suffix: &str) -> NamedTempFile {
-    let f = tempfile::Builder::new()
-        .suffix(suffix)
-        .tempfile()
-        .unwrap();
+    let f = tempfile::Builder::new().suffix(suffix).tempfile().unwrap();
     let mut f = f;
     f.write_all(data).unwrap();
     f.flush().unwrap();
@@ -80,7 +77,8 @@ fn progress_combined_with_min_severity() {
         .unwrap();
     let code = out.status.code().unwrap_or(99);
     assert_eq!(
-        code, 0,
+        code,
+        0,
         "--progress + --min-severity=info on clean image must exit 0; stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );

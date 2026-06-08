@@ -21,7 +21,7 @@ fn ewf_check() -> Command {
 
 // ── EwfIntegrityPath::with_expected_sha256 ────────────────────────────────────
 
-/// EwfIntegrityPath must expose with_expected_sha256, parity with EwfIntegrity.
+/// `EwfIntegrityPath` must expose `with_expected_sha256`, parity with `EwfIntegrity`.
 #[test]
 fn ewf_integrity_path_with_expected_sha256_clean_returns_no_mismatch() {
     // Build a single-chunk image and compute the sha256 of its sector data.
@@ -59,7 +59,9 @@ fn ewf_integrity_path_with_correct_sha256_produces_no_mismatch() {
     // The builder creates a known-good image. Run once to collect computed sha256.
     // We extract it from the ExternalSha256Mismatch anomaly computed field using a sentinel.
     let sentinel = [0xEEu8; 32];
-    let findings = EwfIntegrity::new(&data).with_expected_sha256(sentinel).analyse();
+    let findings = EwfIntegrity::new(&data)
+        .with_expected_sha256(sentinel)
+        .analyse();
     let computed = findings
         .iter()
         .find_map(|a| {
@@ -115,11 +117,7 @@ fn cli_hash_sha256_invalid_hex_exits_two() {
         .arg(f.path())
         .output()
         .unwrap();
-    assert_eq!(
-        out.status.code(),
-        Some(2),
-        "invalid hex must exit 2"
-    );
+    assert_eq!(out.status.code(), Some(2), "invalid hex must exit 2");
 }
 
 #[test]
@@ -147,7 +145,11 @@ fn cli_hash_md5_wrong_exits_one() {
         .arg(f.path())
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(1), "--hash-md5 mismatch must exit 1");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "--hash-md5 mismatch must exit 1"
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.to_lowercase().contains("md5") || stdout.contains("ExternalMd5"),
@@ -167,7 +169,11 @@ fn cli_hash_sha1_wrong_exits_one() {
         .arg(f.path())
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(1), "--hash-sha1 mismatch must exit 1");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "--hash-sha1 mismatch must exit 1"
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.to_lowercase().contains("sha") || stdout.contains("ExternalSha1"),
@@ -190,5 +196,8 @@ fn cli_json_with_hash_sha256_mismatch_reports_kind() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_eq!(out.status.code(), Some(1));
-    assert!(stdout.contains("ExternalSha256Mismatch"), "JSON must name kind: {stdout}");
+    assert!(
+        stdout.contains("ExternalSha256Mismatch"),
+        "JSON must name kind: {stdout}"
+    );
 }

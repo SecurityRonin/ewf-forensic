@@ -2,21 +2,21 @@
 
 //! RED phase — EWF v2 media information section parsing.
 //!
-//! Real EWF v2 media_info body: zlib-compressed, UTF-16LE with BOM (FF FE),
+//! Real EWF v2 `media_info` body: zlib-compressed, UTF-16LE with BOM (FF FE),
 //! tab-separated header and value rows.  The parser must detect when the body
-//! cannot be decompressed or decoded and emit Ewf2MediaInfoParseFailed.
+//! cannot be decompressed or decoded and emit `Ewf2MediaInfoParseFailed`.
 //!
-//! Ground truth from zeros_128s.Ex01 (ewfacquirestream + ewfverify):
+//! Ground truth from `zeros_128s.Ex01` (ewfacquirestream + ewfverify):
 //!   sb=64  (sectors per chunk)
 //!   gr=64  (reported by ewfacquirestream; ewfinfo reads 512 bytes/sector
-//!           from the SECTOR_DATA body header, not from media_info)
+//!           from the `SECTOR_DATA` body header, not from `media_info`)
 //!   tb=2   (chunk count)
 
 mod builder;
 
 use builder::{
-    make_ewf2_descriptor, make_ewf2_file_header,
-    EVF2_SECTION_TYPE_DONE, EVF2_SECTION_TYPE_MD5_HASH, EVF2_SECTION_TYPE_MEDIA_INFO,
+    make_ewf2_descriptor, make_ewf2_file_header, EVF2_SECTION_TYPE_DONE,
+    EVF2_SECTION_TYPE_MD5_HASH, EVF2_SECTION_TYPE_MEDIA_INFO,
 };
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly};
 use std::path::PathBuf;
@@ -27,7 +27,7 @@ fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/zeros_128s.Ex01")
 }
 
-/// Build a minimal EWF v2 segment whose media_info section body is the raw
+/// Build a minimal EWF v2 segment whose `media_info` section body is the raw
 /// bytes supplied by the caller (not wrapped in zlib — that's the caller's job).
 fn segment_with_raw_media_info_body(body: &[u8]) -> Vec<u8> {
     let mut buf = Vec::new();
@@ -64,7 +64,7 @@ fn segment_with_raw_media_info_body(body: &[u8]) -> Vec<u8> {
     buf
 }
 
-/// Build a correctly-formatted zlib+UTF-16LE media_info body.
+/// Build a correctly-formatted zlib+UTF-16LE `media_info` body.
 fn valid_compressed_media_info_body() -> Vec<u8> {
     use flate2::{write::ZlibEncoder, Compression};
     use std::io::Write;
@@ -81,7 +81,7 @@ fn valid_compressed_media_info_body() -> Vec<u8> {
 
 // ── Tests against the real fixture ───────────────────────────────────────────
 
-/// The real zeros_128s.Ex01 fixture must not produce Ewf2MediaInfoParseFailed.
+/// The real `zeros_128s.Ex01` fixture must not produce `Ewf2MediaInfoParseFailed`.
 #[test]
 fn ewf2_real_fixture_media_info_parses_ok() {
     let path = fixture_path();
@@ -99,20 +99,22 @@ fn ewf2_real_fixture_media_info_parses_ok() {
 
 // ── Tests with synthetic segments ────────────────────────────────────────────
 
-/// A segment with a valid zlib+UTF-16LE media_info body must not produce
-/// Ewf2MediaInfoParseFailed.
+/// A segment with a valid zlib+UTF-16LE `media_info` body must not produce
+/// `Ewf2MediaInfoParseFailed`.
 #[test]
 fn ewf2_valid_compressed_media_info_no_parse_failure() {
     let body = valid_compressed_media_info_body();
     let seg = segment_with_raw_media_info_body(&body);
     let findings = EwfIntegrity::new(&seg).analyse();
     assert!(
-        !findings.iter().any(|a| matches!(a, EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed)),
+        !findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed)),
         "valid zlib+UTF-16LE body must not produce Ewf2MediaInfoParseFailed; got: {findings:#?}"
     );
 }
 
-/// A segment with a non-zlib garbage body must produce Ewf2MediaInfoParseFailed.
+/// A segment with a non-zlib garbage body must produce `Ewf2MediaInfoParseFailed`.
 ///
 /// Currently RED: the body is never decompressed, so no parse failure is emitted.
 #[test]
@@ -122,13 +124,15 @@ fn ewf2_corrupt_media_info_body_detected() {
     let seg = segment_with_raw_media_info_body(&garbage);
     let findings = EwfIntegrity::new(&seg).analyse();
     assert!(
-        findings.iter().any(|a| matches!(a, EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed)),
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed)),
         "non-zlib media_info body must produce Ewf2MediaInfoParseFailed; got: {findings:#?}"
     );
 }
 
 /// A segment with raw (uncompressed) UTF-16LE bytes — valid text but not
-/// zlib-wrapped — must produce Ewf2MediaInfoParseFailed.
+/// zlib-wrapped — must produce `Ewf2MediaInfoParseFailed`.
 ///
 /// Currently RED: the body is not examined.
 #[test]
@@ -147,7 +151,7 @@ fn ewf2_uncompressed_utf16_media_info_detected() {
     );
 }
 
-/// An empty media_info body must produce Ewf2MediaInfoParseFailed.
+/// An empty `media_info` body must produce `Ewf2MediaInfoParseFailed`.
 ///
 /// Currently RED: presence of the section clears the missing flag; content is
 /// never checked.
@@ -156,7 +160,9 @@ fn ewf2_empty_media_info_body_detected() {
     let seg = segment_with_raw_media_info_body(&[]);
     let findings = EwfIntegrity::new(&seg).analyse();
     assert!(
-        findings.iter().any(|a| matches!(a, EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed)),
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::Ewf2MediaInfoParseFailed)),
         "empty media_info body must produce Ewf2MediaInfoParseFailed; got: {findings:#?}"
     );
 }
