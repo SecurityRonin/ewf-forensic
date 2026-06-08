@@ -22,7 +22,6 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-
 // ── Harness ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
@@ -135,15 +134,27 @@ fn assert_both_detect(result: &DiffResult) {
 
 #[test]
 fn differential_exfat1_both_clean() {
-    let Some(r) = run_differential(&fixture("exfat1.E01")) else { return };
+    let Some(r) = run_differential(&fixture("exfat1.E01")) else {
+        return;
+    };
     assert_no_divergence(&r);
-    assert!(r.ewfverify_clean(), "ewfverify unexpected failure: {}", r.ewfverify_output);
-    assert!(r.ewf_clean(), "ewf-forensic false positive: {:?}", r.ewf_errors);
+    assert!(
+        r.ewfverify_clean(),
+        "ewfverify unexpected failure: {}",
+        r.ewfverify_output
+    );
+    assert!(
+        r.ewf_clean(),
+        "ewf-forensic false positive: {:?}",
+        r.ewf_errors
+    );
 }
 
 #[test]
 fn differential_nps_emails_both_clean() {
-    let Some(r) = run_differential(&fixture("nps-2010-emails.E01")) else { return };
+    let Some(r) = run_differential(&fixture("nps-2010-emails.E01")) else {
+        return;
+    };
     assert_no_divergence(&r);
     assert!(r.ewfverify_clean());
     assert!(r.ewf_clean(), "false positive: {:?}", r.ewf_errors);
@@ -151,7 +162,9 @@ fn differential_nps_emails_both_clean() {
 
 #[test]
 fn differential_mmls_both_clean() {
-    let Some(r) = run_differential(&fixture("imageformat_mmls_1.E01")) else { return };
+    let Some(r) = run_differential(&fixture("imageformat_mmls_1.E01")) else {
+        return;
+    };
     assert_no_divergence(&r);
     assert!(r.ewfverify_clean());
     assert!(r.ewf_clean(), "false positive: {:?}", r.ewf_errors);
@@ -159,7 +172,9 @@ fn differential_mmls_both_clean() {
 
 #[test]
 fn differential_ewfacquire_clean_both_clean() {
-    let Some(r) = run_differential(&fixture("ewfacquire_clean.E01")) else { return };
+    let Some(r) = run_differential(&fixture("ewfacquire_clean.E01")) else {
+        return;
+    };
     assert_no_divergence(&r);
     assert!(r.ewfverify_clean());
     assert!(r.ewf_clean(), "false positive: {:?}", r.ewf_errors);
@@ -168,15 +183,23 @@ fn differential_ewfacquire_clean_both_clean() {
 #[test]
 fn differential_multiseg_v1_both_clean() {
     // ewfverify auto-discovers E02..E08 from E01 path.
-    let Some(r) = run_differential(&fixture("multiseg_v1.E01")) else { return };
+    let Some(r) = run_differential(&fixture("multiseg_v1.E01")) else {
+        return;
+    };
     assert_no_divergence(&r);
     assert!(r.ewfverify_clean());
-    assert!(r.ewf_clean(), "false positive on multi-segment: {:?}", r.ewf_errors);
+    assert!(
+        r.ewf_clean(),
+        "false positive on multi-segment: {:?}",
+        r.ewf_errors
+    );
 }
 
 #[test]
 fn differential_zeros_128s_both_clean() {
-    let Some(r) = run_differential(&fixture("zeros_128s.Ex01")) else { return };
+    let Some(r) = run_differential(&fixture("zeros_128s.Ex01")) else {
+        return;
+    };
     assert_no_divergence(&r);
     assert!(r.ewfverify_clean());
     assert!(r.ewf_clean(), "false positive: {:?}", r.ewf_errors);
@@ -184,7 +207,9 @@ fn differential_zeros_128s_both_clean() {
 
 #[test]
 fn differential_zeros_compressed_both_clean() {
-    let Some(r) = run_differential(&fixture("zeros_128s_compressed.Ex01")) else { return };
+    let Some(r) = run_differential(&fixture("zeros_128s_compressed.Ex01")) else {
+        return;
+    };
     assert_no_divergence(&r);
     assert!(r.ewfverify_clean());
     assert!(r.ewf_clean(), "false positive: {:?}", r.ewf_errors);
@@ -194,7 +219,7 @@ fn differential_zeros_compressed_both_clean() {
 
 /// Flip one byte inside the compressed DEFLATE data of exfat1 chunk 195.
 /// ewfverify reports: sector validation error + FAILURE (exit 1).
-/// ewf-forensic reports: ChunkDecompressionError + HashMismatch.
+/// ewf-forensic reports: `ChunkDecompressionError` + `HashMismatch`.
 /// Both must agree there is an anomaly.
 #[test]
 fn differential_tampered_compressed_chunk_both_detect() {
@@ -208,11 +233,13 @@ fn differential_tampered_compressed_chunk_both_detect() {
     tmp.write_all(&tampered).unwrap();
     tmp.flush().unwrap();
 
-    let Some(r) = run_differential(tmp.path()) else { return };
+    let Some(r) = run_differential(tmp.path()) else {
+        return;
+    };
     assert_both_detect(&r);
 }
 
-/// Flip one byte in the uncompressed sector data region of ewfacquire_clean.E01.
+/// Flip one byte in the uncompressed sector data region of `ewfacquire_clean.E01`.
 /// ewfacquire uses -c none, so chunks are raw bytes followed by Adler-32.
 /// Both tools must detect the corruption.
 #[test]
@@ -227,14 +254,16 @@ fn differential_tampered_uncompressed_chunk_both_detect() {
     tmp.write_all(&tampered).unwrap();
     tmp.flush().unwrap();
 
-    let Some(r) = run_differential(tmp.path()) else { return };
+    let Some(r) = run_differential(tmp.path()) else {
+        return;
+    };
     assert_both_detect(&r);
 }
 
 // ── Divergence documentation: known characterisation differences ──────────────
 
 /// When a compressed chunk is corrupt, ewfverify reports the MD5 as matching
-/// even though it exits FAILURE. ewf-forensic reports HashMismatch.
+/// even though it exits FAILURE. ewf-forensic reports `HashMismatch`.
 /// This is a characterisation difference, NOT a false positive/negative —
 /// both agree the image is anomalous. Asserts the difference is stable.
 #[test]
@@ -248,11 +277,19 @@ fn differential_compressed_tamper_ewfverify_md5_appears_clean_but_exits_failure(
     tmp.write_all(&tampered).unwrap();
     tmp.flush().unwrap();
 
-    let Some(r) = run_differential(tmp.path()) else { return };
+    let Some(r) = run_differential(tmp.path()) else {
+        return;
+    };
 
     // Both agree: anomalous.
-    assert!(!r.ewfverify_clean(), "ewfverify must exit non-zero for tampered image");
-    assert!(!r.ewf_clean(), "ewf-forensic must report Error/Critical for tampered image");
+    assert!(
+        !r.ewfverify_clean(),
+        "ewfverify must exit non-zero for tampered image"
+    );
+    assert!(
+        !r.ewf_clean(),
+        "ewf-forensic must report Error/Critical for tampered image"
+    );
 
     // Known characterisation difference: ewfverify stdout claims MD5 matches
     // even on FAILURE (per-chunk CRC triggers failure before full-image hash mismatch).
@@ -263,8 +300,14 @@ fn differential_compressed_tamper_ewfverify_md5_appears_clean_but_exits_failure(
     );
 
     // ewf-forensic must surface the chunk-level error with precise index.
-    let has_decomp = r.ewf_anomalies.iter().any(|a| a.contains("chunk") && a.contains("zlib"));
-    let has_hash = r.ewf_anomalies.iter().any(|a| a.contains("MD5 mismatch") || a.contains("hash mismatch"));
+    let has_decomp = r
+        .ewf_anomalies
+        .iter()
+        .any(|a| a.contains("chunk") && a.contains("zlib"));
+    let has_hash = r
+        .ewf_anomalies
+        .iter()
+        .any(|a| a.contains("MD5 mismatch") || a.contains("hash mismatch"));
     assert!(
         has_decomp || has_hash,
         "ewf-forensic must report decompression error or hash mismatch; got: {:?}",
@@ -285,7 +328,9 @@ fn differential_truncated_file_both_detect() {
     tmp.write_all(half).unwrap();
     tmp.flush().unwrap();
 
-    let Some(r) = run_differential(tmp.path()) else { return };
+    let Some(r) = run_differential(tmp.path()) else {
+        return;
+    };
     // Both must agree there is a problem.
     assert!(
         !r.ewfverify_clean() || !r.ewf_clean(),
@@ -301,7 +346,7 @@ fn differential_truncated_file_both_detect() {
 }
 
 /// Flip 4 bytes of the EVF magic signature at offset 0.
-/// ewfverify must fail; ewf-forensic must report InvalidSignature (Critical).
+/// ewfverify must fail; ewf-forensic must report `InvalidSignature` (Critical).
 #[test]
 fn differential_invalid_signature_both_detect() {
     let src = std::fs::read(fixture("ewfacquire_clean.E01")).unwrap();
@@ -332,13 +377,13 @@ fn differential_invalid_signature_both_detect() {
     );
 
     // Also verify ewfverify agrees it's broken (exit non-zero).
-    let ev = Command::new("ewfverify")
-        .arg("-q")
-        .arg(tmp.path())
-        .output();
+    let ev = Command::new("ewfverify").arg("-q").arg(tmp.path()).output();
     if let Ok(ev) = ev {
         let exit = ev.status.code().unwrap_or(-1);
-        assert_ne!(exit, 0, "ewfverify must not report SUCCESS for invalid magic");
+        assert_ne!(
+            exit, 0,
+            "ewfverify must not report SUCCESS for invalid magic"
+        );
     }
 }
 
@@ -370,6 +415,8 @@ fn differential_wrong_stored_md5_both_detect() {
     tmp.write_all(&tampered).unwrap();
     tmp.flush().unwrap();
 
-    let Some(r) = run_differential(tmp.path()) else { return };
+    let Some(r) = run_differential(tmp.path()) else {
+        return;
+    };
     assert_both_detect(&r);
 }

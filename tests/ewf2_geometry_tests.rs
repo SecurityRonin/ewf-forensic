@@ -15,7 +15,10 @@ fn ewf2_valid_geometry_no_anomalies() {
     let geo_errors: Vec<_> = findings
         .iter()
         .filter(|a| {
-            matches!(a, EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch { .. })
+            matches!(
+                a,
+                EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch { .. }
+            )
         })
         .collect();
     assert!(
@@ -62,7 +65,10 @@ fn ewf2_4096_bytes_per_sector_no_geometry_error() {
     let geo: Vec<_> = findings
         .iter()
         .filter(|a| {
-            matches!(a, EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch { .. })
+            matches!(
+                a,
+                EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch { .. }
+            )
         })
         .collect();
     assert!(

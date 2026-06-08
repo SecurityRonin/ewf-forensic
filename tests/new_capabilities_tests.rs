@@ -1,13 +1,16 @@
 //! RED phase — tests for new capabilities:
-//!   1. Multi-segment EWF v1 (from_segments, SegmentOutOfOrder)
-//!   2. EWF v2 analysis (Ewf2SectionDataHashMismatch, Ewf2EncryptedSection, Ewf2HashSectionMissing)
-//!   3. SHA-1 from digest section (DigestSha1Mismatch)
-//!   4. External reference hash (ExternalMd5Mismatch, ExternalSha1Mismatch)
+//!   1. Multi-segment EWF v1 (`from_segments`, `SegmentOutOfOrder`)
+//!   2. EWF v2 analysis (`Ewf2SectionDataHashMismatch`, `Ewf2EncryptedSection`, `Ewf2HashSectionMissing`)
+//!   3. SHA-1 from digest section (`DigestSha1Mismatch`)
+//!   4. External reference hash (`ExternalMd5Mismatch`, `ExternalSha1Mismatch`)
 //!
 //! All tests in this file fail until the GREEN implementation lands.
 mod builder;
 
-use builder::{make_ewf2_clean_segment, make_ewf2_encrypted_segment, make_ewf2_no_hash_segment, make_ewf2_tampered_segment, E01Builder};
+use builder::{
+    make_ewf2_clean_segment, make_ewf2_encrypted_segment, make_ewf2_no_hash_segment,
+    make_ewf2_tampered_segment, E01Builder,
+};
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, Severity};
 use md5::{Digest as _, Md5};
 use sha1::Sha1;
@@ -27,7 +30,7 @@ fn two_segment_e01_clean_no_anomalies() {
         .build();
 
     // Combined MD5: MD5 of 2×32 KB of zeros
-    let combined_md5: [u8; 16] = Md5::digest(&vec![0u8; chunk_size * 2]).into();
+    let combined_md5: [u8; 16] = Md5::digest(vec![0u8; chunk_size * 2]).into();
 
     let seg2 = E01Builder::new(chunk_size as u64)
         .with_segment_number(2)
@@ -199,7 +202,9 @@ fn digest_sha1_correct_no_anomaly() {
     // SHA-1 of all-zero sector data (32 KB)
     let sectors_data = vec![0u8; 64 * 512];
     let correct_sha1: [u8; 20] = Sha1::digest(&sectors_data).into();
-    let image = E01Builder::new(512 * 64).with_digest_sha1(correct_sha1).build();
+    let image = E01Builder::new(512 * 64)
+        .with_digest_sha1(correct_sha1)
+        .build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
         !findings

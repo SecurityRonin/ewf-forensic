@@ -10,8 +10,8 @@
 
 mod builder;
 use builder::{
-    adler32, make_ewf2_descriptor, make_ewf2_file_header,
-    EVF2_SECTION_TYPE_CHUNK_TABLE, EVF2_SECTION_TYPE_DONE, EVF2_SECTION_TYPE_SHA1_HASH,
+    adler32, make_ewf2_descriptor, make_ewf2_file_header, EVF2_SECTION_TYPE_CHUNK_TABLE,
+    EVF2_SECTION_TYPE_DONE, EVF2_SECTION_TYPE_SHA1_HASH,
 };
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly};
 
@@ -19,7 +19,7 @@ const CHUNK_TABLE_HEADER_SIZE: usize = 32;
 const CHUNK_TABLE_ENTRY_SIZE: usize = 16;
 
 /// Build a minimal EWF v2 segment with one uncompressed chunk and a SHA-1
-/// hash section whose stored value is `stored_sha1`.  No MD5, no media_info.
+/// hash section whose stored value is `stored_sha1`.  No MD5, no `media_info`.
 fn make_segment_with_sha1(chunk_data: &[u8], stored_sha1: [u8; 20]) -> Vec<u8> {
     let mut buf = Vec::new();
 
@@ -41,9 +41,9 @@ fn make_segment_with_sha1(chunk_data: &[u8], stored_sha1: [u8; 20]) -> Vec<u8> {
 
     let mut entry = [0u8; CHUNK_TABLE_ENTRY_SIZE];
     entry[0..4].copy_from_slice(&chunk_file_off.to_le_bytes()); // file_offset
-    // entry[4..8] = hi_offset = 0 (padding)
+                                                                // entry[4..8] = hi_offset = 0 (padding)
     entry[8..12].copy_from_slice(&entry_data_size.to_le_bytes()); // data_size
-    // entry[12..16] = flags = 0 (uncompressed)
+                                                                  // entry[12..16] = flags = 0 (uncompressed)
     buf.extend_from_slice(&entry);
     buf.extend_from_slice(&adler32(&entry).to_le_bytes()); // table Adler-32
 
@@ -99,7 +99,9 @@ fn ewf2_stored_sha1_mismatch_detected() {
     let seg = make_segment_with_sha1(&[0u8; 512], [0xFF; 20]);
     let findings = EwfIntegrity::new(&seg).analyse();
     assert!(
-        findings.iter().any(|a| matches!(a, EwfIntegrityAnomaly::DigestSha1Mismatch { .. })),
+        findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::DigestSha1Mismatch { .. })),
         "wrong stored SHA-1 must produce DigestSha1Mismatch; got: {findings:#?}"
     );
 }
@@ -112,7 +114,9 @@ fn ewf2_stored_sha1_correct_no_mismatch() {
     let seg = make_segment_with_sha1(&chunk, correct);
     let findings = EwfIntegrity::new(&seg).analyse();
     assert!(
-        !findings.iter().any(|a| matches!(a, EwfIntegrityAnomaly::DigestSha1Mismatch { .. })),
+        !findings
+            .iter()
+            .any(|a| matches!(a, EwfIntegrityAnomaly::DigestSha1Mismatch { .. })),
         "correct stored SHA-1 must not produce DigestSha1Mismatch; got: {findings:#?}"
     );
 }
@@ -121,8 +125,8 @@ fn ewf2_stored_sha1_correct_no_mismatch() {
 /// `DigestSha1Mismatch` is emitted.
 #[test]
 fn ewf2_real_fixture_no_sha1_mismatch() {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/data/zeros_128s.Ex01");
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/zeros_128s.Ex01");
     if !path.exists() {
         eprintln!("skipping: fixture not found");
         return;

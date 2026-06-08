@@ -11,8 +11,8 @@
 mod builder;
 
 use builder::{
-    make_e01_ewfacquire_style, make_e01_ftk_imager_style, make_e01_xways_style,
-    make_e01_tampered_hash,
+    make_e01_ewfacquire_style, make_e01_ftk_imager_style, make_e01_tampered_hash,
+    make_e01_xways_style,
 };
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, Severity};
 
@@ -125,9 +125,7 @@ fn tampered_hash_severity_is_error() {
 fn real_ftk_imager_clean_fixture_no_anomalies() {
     use ewf_forensic::EwfIntegrityPath;
     let path = std::path::Path::new("tests/data/ftk_imager_clean.E01");
-    if !path.exists() {
-        panic!("fixture missing: {}", path.display());
-    }
+    assert!(path.exists(), "fixture missing: {}", path.display());
     let findings = EwfIntegrityPath::from_path(path).analyse().unwrap();
     let errors: Vec<_> = findings
         .iter()
@@ -144,9 +142,7 @@ fn real_ftk_imager_clean_fixture_no_anomalies() {
 fn real_ftk_imager_tampered_fixture_hash_mismatch() {
     use ewf_forensic::EwfIntegrityPath;
     let path = std::path::Path::new("tests/data/ftk_imager_tampered.E01");
-    if !path.exists() {
-        panic!("fixture missing: {}", path.display());
-    }
+    assert!(path.exists(), "fixture missing: {}", path.display());
     let findings = EwfIntegrityPath::from_path(path).analyse().unwrap();
     assert!(
         findings
@@ -161,9 +157,7 @@ fn real_ftk_imager_tampered_fixture_hash_mismatch() {
 fn real_xways_clean_fixture_no_anomalies() {
     use ewf_forensic::EwfIntegrityPath;
     let path = std::path::Path::new("tests/data/xways_clean.E01");
-    if !path.exists() {
-        panic!("fixture missing: {}", path.display());
-    }
+    assert!(path.exists(), "fixture missing: {}", path.display());
     let findings = EwfIntegrityPath::from_path(path).analyse().unwrap();
     let errors: Vec<_> = findings
         .iter()
@@ -179,9 +173,7 @@ fn real_xways_clean_fixture_no_anomalies() {
 fn real_ewfacquire_clean_fixture_no_anomalies() {
     use ewf_forensic::EwfIntegrityPath;
     let path = std::path::Path::new("tests/data/ewfacquire_clean.E01");
-    if !path.exists() {
-        panic!("fixture missing: {}", path.display());
-    }
+    assert!(path.exists(), "fixture missing: {}", path.display());
     let findings = EwfIntegrityPath::from_path(path).analyse().unwrap();
     let errors: Vec<_> = findings
         .iter()

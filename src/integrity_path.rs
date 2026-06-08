@@ -82,10 +82,12 @@ impl EwfIntegrityPath {
                 let file = File::open(p)?;
                 // SAFETY: read-only mmap of an immutable evidence file.
                 #[allow(unsafe_code)]
-                unsafe { Mmap::map(&file) }
+                unsafe {
+                    Mmap::map(&file)
+                }
             })
             .collect::<io::Result<Vec<Mmap>>>()?;
-        let seg_refs: Vec<&[u8]> = mmaps.iter().map(|m| m.as_ref()).collect();
+        let seg_refs: Vec<&[u8]> = mmaps.iter().map(std::convert::AsRef::as_ref).collect();
         Ok(EwfIntegrity::from_segments(&seg_refs).compute_hashes())
     }
 
@@ -101,11 +103,13 @@ impl EwfIntegrityPath {
                 // SAFETY: we open the file read-only and do not modify it.
                 // Concurrent truncation is not a concern for immutable evidence files.
                 #[allow(unsafe_code)]
-                unsafe { Mmap::map(&file) }
+                unsafe {
+                    Mmap::map(&file)
+                }
             })
             .collect::<io::Result<Vec<Mmap>>>()?;
 
-        let seg_refs: Vec<&[u8]> = mmaps.iter().map(|m| m.as_ref()).collect();
+        let seg_refs: Vec<&[u8]> = mmaps.iter().map(std::convert::AsRef::as_ref).collect();
 
         let mut checker = EwfIntegrity::from_segments(&seg_refs);
         if let Some(h) = self.expected_md5 {
@@ -138,11 +142,13 @@ impl EwfIntegrityPath {
                 let file = File::open(p)?;
                 // SAFETY: read-only mmap of an immutable evidence file.
                 #[allow(unsafe_code)]
-                unsafe { Mmap::map(&file) }
+                unsafe {
+                    Mmap::map(&file)
+                }
             })
             .collect::<io::Result<Vec<Mmap>>>()?;
 
-        let seg_refs: Vec<&[u8]> = mmaps.iter().map(|m| m.as_ref()).collect();
+        let seg_refs: Vec<&[u8]> = mmaps.iter().map(std::convert::AsRef::as_ref).collect();
 
         let mut checker = EwfIntegrity::from_segments(&seg_refs);
         if let Some(h) = self.expected_md5 {
@@ -158,7 +164,11 @@ impl EwfIntegrityPath {
         let anomalies = checker.analyse();
         let hashes = EwfIntegrity::from_segments(&seg_refs)
             .compute_hashes()
-            .unwrap_or(ComputedHashes { md5: [0u8; 16], sha1: [0u8; 20], sha256: [0u8; 32] });
+            .unwrap_or(ComputedHashes {
+                md5: [0u8; 16],
+                sha1: [0u8; 20],
+                sha256: [0u8; 32],
+            });
 
         Ok((anomalies, hashes))
     }
@@ -181,11 +191,13 @@ impl EwfIntegrityPath {
                 let file = File::open(p)?;
                 // SAFETY: read-only mmap of an immutable evidence file.
                 #[allow(unsafe_code)]
-                unsafe { Mmap::map(&file) }
+                unsafe {
+                    Mmap::map(&file)
+                }
             })
             .collect::<io::Result<Vec<Mmap>>>()?;
 
-        let seg_refs: Vec<&[u8]> = mmaps.iter().map(|m| m.as_ref()).collect();
+        let seg_refs: Vec<&[u8]> = mmaps.iter().map(std::convert::AsRef::as_ref).collect();
 
         let mut checker = EwfIntegrity::from_segments(&seg_refs);
         if let Some(h) = self.expected_md5 {
@@ -259,7 +271,7 @@ fn parse_ewf_extension(ext: &str) -> Option<(char, bool, usize)> {
     }
     let rest: String = chars.collect();
     let has_x = rest.starts_with('x') || rest.starts_with('X');
-    let rest = rest.trim_start_matches(|c| c == 'x' || c == 'X');
+    let rest = rest.trim_start_matches(['x', 'X']);
     if rest.chars().all(|c| c.is_ascii_digit()) && !rest.is_empty() {
         Some((prefix, has_x, rest.len()))
     } else {
@@ -272,5 +284,5 @@ fn parse_ewf_extension(ext: &str) -> Option<(char, bool, usize)> {
 fn make_ewf_extension(prefix: char, has_x: bool, digit_count: usize, n: u32) -> String {
     let width = digit_count.max(2);
     let x = if has_x { "x" } else { "" };
-    format!("{}{}{:0width$}", prefix, x, n, width = width)
+    format!("{prefix}{x}{n:0width$}")
 }

@@ -10,8 +10,8 @@
 
 mod builder;
 use builder::{
-    adler32, make_ewf2_descriptor, make_ewf2_file_header,
-    EVF2_SECTION_TYPE_CHUNK_TABLE, EVF2_SECTION_TYPE_DONE, EVF2_SECTION_TYPE_SHA256_HASH,
+    adler32, make_ewf2_descriptor, make_ewf2_file_header, EVF2_SECTION_TYPE_CHUNK_TABLE,
+    EVF2_SECTION_TYPE_DONE, EVF2_SECTION_TYPE_SHA256_HASH,
 };
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly};
 
@@ -113,8 +113,8 @@ fn ewf2_stored_sha256_correct_no_mismatch() {
 /// Real EWF v2 fixture must not produce spurious `DigestSha256Mismatch`.
 #[test]
 fn ewf2_real_fixture_no_sha256_mismatch() {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/data/zeros_128s.Ex01");
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/zeros_128s.Ex01");
     if !path.exists() {
         eprintln!("skipping: fixture not found");
         return;

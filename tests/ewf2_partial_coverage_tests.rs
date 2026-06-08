@@ -58,7 +58,7 @@ fn ewf1_analysis_produces_no_ewf2_anomalies() {
     );
 }
 
-/// A minimal EWF v2 image with no hash section must emit Ewf2HashSectionMissing.
+/// A minimal EWF v2 image with no hash section must emit `Ewf2HashSectionMissing`.
 #[test]
 fn ewf2_no_hash_section_emits_hash_section_missing() {
     let image = minimal_ewf2();
@@ -71,7 +71,7 @@ fn ewf2_no_hash_section_emits_hash_section_missing() {
     );
 }
 
-/// A minimal EWF v2 image with no media info section must emit Ewf2MediaInfoMissing.
+/// A minimal EWF v2 image with no media info section must emit `Ewf2MediaInfoMissing`.
 #[test]
 fn ewf2_no_media_info_emits_media_info_missing() {
     let image = minimal_ewf2();

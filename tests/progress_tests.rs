@@ -6,7 +6,7 @@
 //! chunk processed, report monotonically increasing `chunks_done`, and return
 //! the same anomaly set as `analyse()`.
 //!
-//! Tested against both EWF v1 (zeros_128s via builder) and EWF v2 (zeros_128s.Ex01).
+//! Tested against both EWF v1 (`zeros_128s` via builder) and EWF v2 (`zeros_128s.Ex01`).
 
 mod builder;
 use builder::E01Builder;
@@ -26,7 +26,7 @@ fn ewf2_fixture_path() -> PathBuf {
 
 // ── EWF v1 progress tests ─────────────────────────────────────────────────────
 
-/// analyse_with_progress must call the callback at least once for an image
+/// `analyse_with_progress` must call the callback at least once for an image
 /// with sector data.
 #[test]
 fn ewf1_progress_called_at_least_once() {
@@ -35,10 +35,13 @@ fn ewf1_progress_called_at_least_once() {
     EwfIntegrity::new(&data).analyse_with_progress(|_p| {
         call_count += 1;
     });
-    assert!(call_count > 0, "progress callback must be called at least once");
+    assert!(
+        call_count > 0,
+        "progress callback must be called at least once"
+    );
 }
 
-/// chunks_done in the progress callback must be monotonically non-decreasing.
+/// `chunks_done` in the progress callback must be monotonically non-decreasing.
 #[test]
 fn ewf1_progress_chunks_done_monotone() {
     let data = ewf1_fixture();
@@ -53,7 +56,7 @@ fn ewf1_progress_chunks_done_monotone() {
     });
 }
 
-/// The final progress report must have chunks_done > 0 for an image with data.
+/// The final progress report must have `chunks_done` > 0 for an image with data.
 #[test]
 fn ewf1_progress_final_chunks_done_nonzero() {
     let data = ewf1_fixture();
@@ -62,10 +65,14 @@ fn ewf1_progress_final_chunks_done_nonzero() {
         final_progress = Some(p);
     });
     let p = final_progress.expect("at least one progress callback must fire");
-    assert!(p.chunks_done > 0, "final chunks_done must be > 0; got {}", p.chunks_done);
+    assert!(
+        p.chunks_done > 0,
+        "final chunks_done must be > 0; got {}",
+        p.chunks_done
+    );
 }
 
-/// analyse_with_progress must return the same anomalies as analyse().
+/// `analyse_with_progress` must return the same anomalies as `analyse()`.
 #[test]
 fn ewf1_progress_same_anomalies_as_analyse() {
     let data = ewf1_fixture();
@@ -77,7 +84,7 @@ fn ewf1_progress_same_anomalies_as_analyse() {
     );
 }
 
-/// bytes_done in progress must be monotonically non-decreasing.
+/// `bytes_done` in progress must be monotonically non-decreasing.
 #[test]
 fn ewf1_progress_bytes_done_monotone() {
     let data = ewf1_fixture();
@@ -94,7 +101,7 @@ fn ewf1_progress_bytes_done_monotone() {
 
 // ── EWF v2 progress tests ─────────────────────────────────────────────────────
 
-/// EWF v2 progress: chunks_total must equal the actual chunk count when known.
+/// EWF v2 progress: `chunks_total` must equal the actual chunk count when known.
 #[test]
 fn ewf2_progress_chunks_total_matches_chunk_table() {
     let path = ewf2_fixture_path();
@@ -122,7 +129,7 @@ fn ewf2_progress_chunks_total_matches_chunk_table() {
     );
 }
 
-/// EWF v2 analyse_with_progress returns same anomalies as analyse().
+/// EWF v2 `analyse_with_progress` returns same anomalies as `analyse()`.
 #[test]
 fn ewf2_progress_same_anomalies_as_analyse() {
     let path = ewf2_fixture_path();

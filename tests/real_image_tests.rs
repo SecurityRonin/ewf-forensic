@@ -164,8 +164,8 @@ fn find_sectors_body_start(data: &[u8]) -> Option<usize> {
 #[test]
 fn exfat1_sectors_tamper_triggers_hash_mismatch() {
     let mut data = fixture("exfat1.E01");
-    let body_start = find_sectors_body_start(&data)
-        .expect("sectors section not found in exfat1.E01");
+    let body_start =
+        find_sectors_body_start(&data).expect("sectors section not found in exfat1.E01");
     data[body_start + 16] ^= 0xFF;
     let findings = EwfIntegrity::new(&data).analyse();
     assert!(
@@ -179,8 +179,8 @@ fn exfat1_sectors_tamper_triggers_hash_mismatch() {
 #[test]
 fn nps_emails_sectors_tamper_triggers_hash_mismatch() {
     let mut data = fixture("nps-2010-emails.E01");
-    let body_start = find_sectors_body_start(&data)
-        .expect("sectors section not found in nps-2010-emails.E01");
+    let body_start =
+        find_sectors_body_start(&data).expect("sectors section not found in nps-2010-emails.E01");
     data[body_start + 16] ^= 0xFF;
     let findings = EwfIntegrity::new(&data).analyse();
     assert!(
@@ -244,9 +244,7 @@ fn mmls_no_chunk_checksum_mismatch() {
 #[test]
 fn exfat1_computed_sha256_matches_ewfverify() {
     let data = fixture("exfat1.E01");
-    let expected = hex_sha256(
-        "af6f974495187c35050d5c66d271617a1ec00d446adcf8590d7042ad2bf02bb7",
-    );
+    let expected = hex_sha256("af6f974495187c35050d5c66d271617a1ec00d446adcf8590d7042ad2bf02bb7");
     let findings = EwfIntegrity::new(&data)
         .with_expected_sha256(expected)
         .analyse();
@@ -262,9 +260,7 @@ fn exfat1_computed_sha256_matches_ewfverify() {
 #[test]
 fn nps_emails_computed_sha256_matches_ewfverify() {
     let data = fixture("nps-2010-emails.E01");
-    let expected = hex_sha256(
-        "ed4e1b20fb92d9609778d6f687ef478c2ed88d7da18f98b8b023f3dfecd41a9d",
-    );
+    let expected = hex_sha256("ed4e1b20fb92d9609778d6f687ef478c2ed88d7da18f98b8b023f3dfecd41a9d");
     let findings = EwfIntegrity::new(&data)
         .with_expected_sha256(expected)
         .analyse();
@@ -280,9 +276,7 @@ fn nps_emails_computed_sha256_matches_ewfverify() {
 #[test]
 fn mmls_computed_sha256_matches_ewfverify() {
     let data = fixture("imageformat_mmls_1.E01");
-    let expected = hex_sha256(
-        "e7eb6fca46bebeedc4af4cc5bfe9675691bab8ce471315317b561a28899e7902",
-    );
+    let expected = hex_sha256("e7eb6fca46bebeedc4af4cc5bfe9675691bab8ce471315317b561a28899e7902");
     let findings = EwfIntegrity::new(&data)
         .with_expected_sha256(expected)
         .analyse();
@@ -308,8 +302,8 @@ fn mmls_computed_sha256_matches_ewfverify() {
 #[test]
 fn corrupt_zlib_chunk_produces_decompression_error_anomaly() {
     let mut data = fixture("exfat1.E01");
-    let body_start = find_sectors_body_start(&data)
-        .expect("sectors section not found in exfat1.E01");
+    let body_start =
+        find_sectors_body_start(&data).expect("sectors section not found in exfat1.E01");
     // Offset +4: past the 2-byte zlib CMF/FLG header, into the DEFLATE stream.
     data[body_start + 4] ^= 0xFF;
     let findings = EwfIntegrity::new(&data).analyse();
@@ -324,8 +318,7 @@ fn corrupt_zlib_chunk_produces_decompression_error_anomaly() {
 #[test]
 fn chunk_decompression_error_includes_chunk_index() {
     let mut data = fixture("exfat1.E01");
-    let body_start = find_sectors_body_start(&data)
-        .expect("sectors section not found");
+    let body_start = find_sectors_body_start(&data).expect("sectors section not found");
     data[body_start + 4] ^= 0xFF;
     let findings = EwfIntegrity::new(&data).analyse();
     let anomaly = findings
@@ -334,7 +327,10 @@ fn chunk_decompression_error_includes_chunk_index() {
         .expect("ChunkDecompressionError must be present");
     // Chunk 0 is the first chunk — index must be 0.
     assert!(
-        matches!(anomaly, EwfIntegrityAnomaly::ChunkDecompressionError { chunk_index: 0 }),
+        matches!(
+            anomaly,
+            EwfIntegrityAnomaly::ChunkDecompressionError { chunk_index: 0 }
+        ),
         "corrupt chunk 0 must report chunk_index=0; got: {anomaly:?}"
     );
 }
@@ -343,8 +339,7 @@ fn chunk_decompression_error_includes_chunk_index() {
 fn chunk_decompression_error_is_error_severity() {
     use ewf_forensic::Severity;
     let mut data = fixture("exfat1.E01");
-    let body_start = find_sectors_body_start(&data)
-        .expect("sectors section not found");
+    let body_start = find_sectors_body_start(&data).expect("sectors section not found");
     data[body_start + 4] ^= 0xFF;
     let findings = EwfIntegrity::new(&data).analyse();
     let anomaly = findings

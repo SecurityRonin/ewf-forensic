@@ -4,7 +4,7 @@
 //!
 //! ewfverify verifies individual chunk checksums in addition to the overall
 //! MD5. EWF v1 appends a 4-byte Adler-32 after each chunk's raw (possibly
-//! compressed) bytes. A corrupt checksum must surface as ChunkChecksumMismatch.
+//! compressed) bytes. A corrupt checksum must surface as `ChunkChecksumMismatch`.
 mod builder;
 
 use builder::E01Builder;
@@ -31,9 +31,7 @@ fn corrupt_chunk_checksum_detected() {
 
 #[test]
 fn clean_chunk_checksums_no_anomaly() {
-    let image = E01Builder::new(512 * 64)
-        .with_chunk_checksums()
-        .build();
+    let image = E01Builder::new(512 * 64).with_chunk_checksums().build();
     let findings = EwfIntegrity::new(&image).analyse();
     assert!(
         !findings

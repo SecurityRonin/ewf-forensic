@@ -73,36 +73,17 @@ cast_possible_wrap    = { level = "allow", priority = 1 }
 cast_sign_loss        = { level = "allow", priority = 1 }
 cast_precision_loss   = { level = "allow", priority = 1 }
 cast_lossless         = { level = "allow", priority = 1 }
-match_same_arms       = { level = "allow", priority = 1 }
-doc_markdown          = { level = "allow", priority = 1 }
-manual_let_else       = { level = "allow", priority = 1 }
-needless_borrow       = { level = "allow", priority = 1 }
-similar_names         = { level = "allow", priority = 1 }
-too_many_lines        = { level = "allow", priority = 1 }
-too_many_arguments    = { level = "allow", priority = 1 }
-items_after_statements = { level = "allow", priority = 1 }
-return_self_not_must_use = { level = "allow", priority = 1 }
-format_collect        = { level = "allow", priority = 1 }
-redundant_closure_for_method_calls = { level = "allow", priority = 1 }
-map_unwrap_or         = { level = "allow", priority = 1 }
-manual_pattern_char_comparison = { level = "allow", priority = 1 }
-uninlined_format_args = { level = "allow", priority = 1 }
-single_match_else     = { level = "allow", priority = 1 }
-match_single_binding  = { level = "allow", priority = 1 }
-needless_pass_by_value = { level = "allow", priority = 1 }
-format_push_string    = { level = "allow", priority = 1 }
-single_char_add_str   = { level = "allow", priority = 1 }
-single_char_pattern   = { level = "allow", priority = 1 }
-question_mark         = { level = "allow", priority = 1 }
-bool_to_int_with_if   = { level = "allow", priority = 1 }
-struct_excessive_bools = { level = "allow", priority = 1 }
-unnecessary_literal_bound = { level = "allow", priority = 1 }
-manual_repeat_n       = { level = "allow", priority = 1 }
-needless_raw_string_hashes = { level = "allow", priority = 1 }
-unreadable_literal    = { level = "allow", priority = 1 }
-used_underscore_binding = { level = "allow", priority = 1 }
-needless_borrows_for_generic_args = { level = "allow", priority = 1 }
-trivially_copy_pass_by_ref = { level = "allow", priority = 1 }
-manual_assert         = { level = "allow", priority = 1 }
-ignored_unit_patterns = { level = "allow", priority = 1 }
-if_not_else           = { level = "allow", priority = 1 }
+# Structural/idiomatic allows kept deliberately. Each is either high-volume
+# noise inherent to spec-driven forensic code or a readability trade-off that
+# fixing would worsen; none affects the panic-free, bounds-checked guarantee.
+match_same_arms       = { level = "allow", priority = 1 } # anomaly enums map many distinct arms to the same severity/category by design; merging hides the spec mapping
+doc_markdown          = { level = "allow", priority = 1 } # docs cite spec field names / hex offsets that are not real code items
+return_self_not_must_use = { level = "allow", priority = 1 } # builder-style setters
+manual_let_else       = { level = "allow", priority = 1 } # explicit match/if-let reads clearer in the parsers
+similar_names         = { level = "allow", priority = 1 } # md5/sha1/sha256, table1/table2 etc. are intentionally parallel
+too_many_lines        = { level = "allow", priority = 1 } # large spec-driven section/parse functions
+too_many_arguments    = { level = "allow", priority = 1 } # builders mirror on-disk field sets
+struct_excessive_bools = { level = "allow", priority = 1 } # presence flags mirror on-disk section presence
+trivially_copy_pass_by_ref = { level = "allow", priority = 1 } # uniform &-by-ref signatures across the parser API
+format_collect        = { level = "allow", priority = 1 } # hex-string helpers in tests
+format_push_string    = { level = "allow", priority = 1 } # report builders push formatted lines

@@ -15,7 +15,7 @@ use tempfile::NamedTempFile;
 
 use blazehash::algorithm::{hash_bytes, Algorithm};
 
-/// Sector bytes for E01Builder::new(512 * 64): single chunk, all zeros.
+/// Sector bytes for `E01Builder::new(512` * 64): single chunk, all zeros.
 fn sector_data_for_single_chunk() -> Vec<u8> {
     vec![0u8; 512 * 64]
 }
@@ -64,7 +64,8 @@ fn compute_hashes_md5_matches_blazehash_oracle() {
         .expect("must produce hashes");
 
     assert_eq!(
-        hashes.md5, expected,
+        hashes.md5,
+        expected,
         "MD5 must match blazehash oracle.\n  ewf-forensic: {}\n  blazehash:    {}",
         hex_string(&hashes.md5),
         expected_md5_hex,
@@ -83,7 +84,8 @@ fn compute_hashes_sha1_matches_blazehash_oracle() {
         .expect("must produce hashes");
 
     assert_eq!(
-        hashes.sha1, expected,
+        hashes.sha1,
+        expected,
         "SHA-1 must match blazehash oracle.\n  ewf-forensic: {}\n  blazehash:    {}",
         hex_string(&hashes.sha1),
         expected_sha1_hex,
@@ -102,7 +104,8 @@ fn compute_hashes_sha256_matches_blazehash_oracle() {
         .expect("must produce hashes");
 
     assert_eq!(
-        hashes.sha256, expected,
+        hashes.sha256,
+        expected,
         "SHA-256 must match blazehash oracle.\n  ewf-forensic: {}\n  blazehash:    {}",
         hex_string(&hashes.sha256),
         expected_sha256_hex,
@@ -110,7 +113,7 @@ fn compute_hashes_sha256_matches_blazehash_oracle() {
 }
 
 /// All three hashes must be internally consistent:
-/// the MD5 in compute_hashes must equal the stored MD5 in the image.
+/// the MD5 in `compute_hashes` must equal the stored MD5 in the image.
 #[test]
 fn compute_hashes_md5_consistent_with_stored_hash() {
     let image = E01Builder::new(512 * 64).build();
@@ -134,9 +137,10 @@ fn compute_hashes_md5_consistent_with_stored_hash() {
         .with_expected_md5(hashes.md5)
         .analyse();
     assert!(
-        findings2
-            .iter()
-            .all(|a| !matches!(a, ewf_forensic::EwfIntegrityAnomaly::ExternalMd5Mismatch { .. })),
+        findings2.iter().all(|a| !matches!(
+            a,
+            ewf_forensic::EwfIntegrityAnomaly::ExternalMd5Mismatch { .. }
+        )),
         "compute_hashes().md5 must agree with verification path; got: {findings2:#?}"
     );
 }
@@ -189,13 +193,13 @@ fn computed_hashes_type_is_public() {
         .expect("must produce hashes");
 
     // Access fields directly — they must be pub
-    let _md5: [u8; 16] = hashes.md5;
-    let _sha1: [u8; 20] = hashes.sha1;
-    let _sha256: [u8; 32] = hashes.sha256;
+    let md5: [u8; 16] = hashes.md5;
+    let sha1: [u8; 20] = hashes.sha1;
+    let sha256: [u8; 32] = hashes.sha256;
 
-    assert_eq!(_md5, expected_md5);
-    assert_eq!(_sha1, expected_sha1);
-    assert_eq!(_sha256, expected_sha256);
+    assert_eq!(md5, expected_md5);
+    assert_eq!(sha1, expected_sha1);
+    assert_eq!(sha256, expected_sha256);
 }
 
 fn hex_string(bytes: &[u8]) -> String {

@@ -1,13 +1,13 @@
 //! RED phase — libewf-grounded format quirks.
 //!
 //! All tests fail until the implementation catches up to the real EWF spec.
-//! Sources: libewf/libewf_segment_file.c, libewf/libewf_header_sections.c,
-//!          the ewf_data_t struct (1052 bytes), and ewf_file_header_v1_t.
+//! Sources: `libewf/libewf_segment_file.c`, `libewf/libewf_header_sections.c`,
+//!          the `ewf_data_t` struct (1052 bytes), and `ewf_file_header_v1_t`.
 mod builder;
 
 use builder::{
-    make_dvf_segment, make_lvf_segment, make_e01_full_volume_bad_crc,
-    make_e01_full_volume_clean, make_e01_unknown_media_type, make_e01_valid_media_types,
+    make_dvf_segment, make_e01_full_volume_bad_crc, make_e01_full_volume_clean,
+    make_e01_unknown_media_type, make_e01_valid_media_types, make_lvf_segment,
     make_two_segment_guid_mismatch, make_two_segment_matching_guids,
 };
 use ewf_forensic::{EwfIntegrity, EwfIntegrityAnomaly, Severity};
