@@ -80,6 +80,8 @@ impl EwfIntegrityPath {
             .iter()
             .map(|p| {
                 let file = File::open(p)?;
+                // SAFETY: read-only mmap of an immutable evidence file.
+                #[allow(unsafe_code)]
                 unsafe { Mmap::map(&file) }
             })
             .collect::<io::Result<Vec<Mmap>>>()?;
@@ -98,6 +100,7 @@ impl EwfIntegrityPath {
                 let file = File::open(p)?;
                 // SAFETY: we open the file read-only and do not modify it.
                 // Concurrent truncation is not a concern for immutable evidence files.
+                #[allow(unsafe_code)]
                 unsafe { Mmap::map(&file) }
             })
             .collect::<io::Result<Vec<Mmap>>>()?;
@@ -134,6 +137,7 @@ impl EwfIntegrityPath {
             .map(|p| {
                 let file = File::open(p)?;
                 // SAFETY: read-only mmap of an immutable evidence file.
+                #[allow(unsafe_code)]
                 unsafe { Mmap::map(&file) }
             })
             .collect::<io::Result<Vec<Mmap>>>()?;
@@ -176,6 +180,7 @@ impl EwfIntegrityPath {
             .map(|p| {
                 let file = File::open(p)?;
                 // SAFETY: read-only mmap of an immutable evidence file.
+                #[allow(unsafe_code)]
                 unsafe { Mmap::map(&file) }
             })
             .collect::<io::Result<Vec<Mmap>>>()?;

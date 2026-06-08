@@ -1,10 +1,12 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod builder;
 
 use builder::{
     EVF_SIGNATURE, FILE_HEADER_SIZE, SECTION_DESCRIPTOR_SIZE, VOLUME_DATA_SIZE,
     make_section_descriptor, adler32,
 };
-use ewf_forensic::{EwfHeaderMetadata, EwfIntegrity};
+use ewf_forensic::EwfIntegrity;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use std::io::Write as _;

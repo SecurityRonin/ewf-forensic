@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Real EWF v2 fixture tests — zeros_128s.Ex01 created by libewf ewfacquirestream.
 //!
 //! Fixture: tests/data/zeros_128s.Ex01

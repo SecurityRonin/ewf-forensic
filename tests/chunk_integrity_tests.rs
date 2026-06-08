@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — per-chunk Adler-32 detection (ewfverify parity).
 //!
 //! ewfverify verifies individual chunk checksums in addition to the overall

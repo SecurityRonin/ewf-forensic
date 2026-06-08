@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — EWF v2 Ex01/Ex02 multi-segment sibling discovery.
 //!
 //! Bug: `make_ewf_extension` drops the 'x' from "Ex01" so it generates

@@ -349,6 +349,47 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+// ── Bounds-checked little-endian integer readers ─────────────────────────────
+//
+// These never panic on a short or attacker-truncated slice: an out-of-range
+// offset yields 0 rather than an out-of-bounds index or `try_into` unwrap. Every
+// length/offset/count field parsed from an untrusted EWF image flows through one
+// of these.
+
+fn le_u16(data: &[u8], off: usize) -> u16 {
+    let mut b = [0u8; 2];
+    if let Some(s) = data.get(off..off + 2) {
+        b.copy_from_slice(s);
+    }
+    u16::from_le_bytes(b)
+}
+
+fn le_u32(data: &[u8], off: usize) -> u32 {
+    let mut b = [0u8; 4];
+    if let Some(s) = data.get(off..off + 4) {
+        b.copy_from_slice(s);
+    }
+    u32::from_le_bytes(b)
+}
+
+fn le_u64(data: &[u8], off: usize) -> u64 {
+    let mut b = [0u8; 8];
+    if let Some(s) = data.get(off..off + 8) {
+        b.copy_from_slice(s);
+    }
+    u64::from_le_bytes(b)
+}
+
+/// Read a fixed-size byte array from `data` at `off`; an out-of-range slice
+/// yields all zeroes rather than panicking.
+fn array_at<const N: usize>(data: &[u8], off: usize) -> [u8; N] {
+    let mut b = [0u8; N];
+    if let Some(s) = data.get(off..off + N) {
+        b.copy_from_slice(s);
+    }
+    b
+}
+
 /// Snapshot of analysis progress, delivered to the callback passed to
 /// [`EwfIntegrity::analyse_with_progress`] after each chunk is processed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -525,7 +566,7 @@ impl<'a> EwfIntegrity<'a> {
                 issues.push(EwfIntegrityAnomaly::InvalidSignature);
             }
 
-            let seg_num = u16::from_le_bytes(data[9..11].try_into().unwrap());
+            let seg_num = le_u16(data, 9);
             if seg_num == 0 {
                 issues.push(EwfIntegrityAnomaly::SegmentNumberZero);
             } else if seg_num != expected_seg_num {
@@ -579,7 +620,7 @@ impl<'a> EwfIntegrity<'a> {
             if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
                 let data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
                 if data.len() >= data_start + 4 {
-                    let count = u32::from_le_bytes(data[data_start..data_start + 4].try_into().unwrap());
+                    let count = le_u32(data, data_start);
                     total_table_entries = total_table_entries.saturating_add(count);
                 }
                 check_table_v1(
@@ -618,7 +659,7 @@ impl<'a> EwfIntegrity<'a> {
             if let Some(e2) = sections.iter().find(|s| s.type_name == "error2") {
                 let body_start = (e2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
                 if body_start + 4 <= data.len() {
-                    let count = u32::from_le_bytes(data[body_start..body_start + 4].try_into().unwrap());
+                    let count = le_u32(data, body_start);
                     if count > 0 {
                         issues.push(EwfIntegrityAnomaly::BadSectorsPresent { count });
                     }
@@ -692,7 +733,7 @@ impl<'a> EwfIntegrity<'a> {
                 issues.push(EwfIntegrityAnomaly::InvalidSignature);
             }
 
-            let seg_num = u32::from_le_bytes(data[12..16].try_into().unwrap());
+            let seg_num = le_u32(data, 12);
             if seg_num == 0 {
                 issues.push(EwfIntegrityAnomaly::SegmentNumberZero);
             } else if seg_num != expected_seg_num {
@@ -704,7 +745,7 @@ impl<'a> EwfIntegrity<'a> {
 
             // compression_method at file header [10..12]: 0=none/deflate, 1=deflate.
             // Values ≥ 2 indicate bzip2, lzma, or other algorithms not supported here.
-            let compression_method = u16::from_le_bytes(data[10..12].try_into().unwrap());
+            let compression_method = le_u16(data, 10);
             if compression_method > 1 {
                 issues.push(EwfIntegrityAnomaly::UnsupportedCompressionAlgorithm {
                     method_id: compression_method,
@@ -728,11 +769,11 @@ impl<'a> EwfIntegrity<'a> {
                     break;
                 }
                 let desc = &data[desc_offset..desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE];
-                let section_type = u32::from_le_bytes(desc[0..4].try_into().unwrap());
-                let data_flags  = u32::from_le_bytes(desc[4..8].try_into().unwrap());
-                let prev_offset = u64::from_le_bytes(desc[8..16].try_into().unwrap()) as usize;
-                let data_size   = u64::from_le_bytes(desc[16..24].try_into().unwrap()) as usize;
-                let stored_hash: [u8; 16] = desc[32..48].try_into().unwrap();
+                let section_type = le_u32(desc, 0);
+                let data_flags  = le_u32(desc, 4);
+                let prev_offset = le_u64(desc, 8) as usize;
+                let data_size   = le_u64(desc, 16) as usize;
+                let stored_hash: [u8; 16] = array_at(desc, 32);
 
                 // Body occupies [desc_offset - data_size .. desc_offset].
                 let body_end   = desc_offset;
@@ -895,7 +936,7 @@ impl<'a> EwfIntegrity<'a> {
             if data[0..8] != EVF_SIGNATURE && data[0..8] != DVF_SIGNATURE && data[0..8] != LVF_SIGNATURE {
                 issues.push(EwfIntegrityAnomaly::InvalidSignature);
             }
-            let seg_num = u16::from_le_bytes(data[9..11].try_into().unwrap());
+            let seg_num = le_u16(data, 9);
             if seg_num == 0 {
                 issues.push(EwfIntegrityAnomaly::SegmentNumberZero);
             } else if seg_num != expected_seg_num {
@@ -928,7 +969,7 @@ impl<'a> EwfIntegrity<'a> {
             if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
                 let data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
                 if data.len() >= data_start + 4 {
-                    let count = u32::from_le_bytes(data[data_start..data_start + 4].try_into().unwrap());
+                    let count = le_u32(data, data_start);
                     total_table_entries = total_table_entries.saturating_add(count);
                 }
                 check_table_v1(data, table.offset, vol_count, file_size, sectors_range, &mut issues);
@@ -956,7 +997,7 @@ impl<'a> EwfIntegrity<'a> {
             if let Some(e2) = sections.iter().find(|s| s.type_name == "error2") {
                 let body_start = (e2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
                 if body_start + 4 <= data.len() {
-                    let count = u32::from_le_bytes(data[body_start..body_start + 4].try_into().unwrap());
+                    let count = le_u32(data, body_start);
                     if count > 0 {
                         issues.push(EwfIntegrityAnomaly::BadSectorsPresent { count });
                     }
@@ -1009,7 +1050,7 @@ fn parse_header_section(data: &[u8]) -> Option<EwfHeaderMetadata> {
     if &desc[..type_end] != b"header" {
         return None;
     }
-    let section_size = u64::from_le_bytes(desc[24..32].try_into().unwrap()) as usize;
+    let section_size = le_u64(desc, 24) as usize;
     let body_start = desc_off + SECTION_DESCRIPTOR_SIZE;
     let body_end = (desc_off + section_size).min(data.len());
     if body_start >= body_end {
@@ -1100,7 +1141,7 @@ fn walk_sections_v1(data: &[u8], issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<S
         let type_end = desc[..16].iter().position(|&b| b == 0).unwrap_or(16);
         let type_name = String::from_utf8_lossy(&desc[..type_end]).into_owned();
 
-        let stored_crc = u32::from_le_bytes(desc[72..76].try_into().unwrap());
+        let stored_crc = le_u32(desc, 72);
         let computed_crc = adler32(&desc[..72]);
         if computed_crc != stored_crc {
             issues.push(EwfIntegrityAnomaly::SectionDescriptorCrcMismatch {
@@ -1118,8 +1159,8 @@ fn walk_sections_v1(data: &[u8], issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<S
             });
         }
 
-        let next = u64::from_le_bytes(desc[16..24].try_into().unwrap());
-        let section_size = u64::from_le_bytes(desc[24..32].try_into().unwrap());
+        let next = le_u64(desc, 16);
+        let section_size = le_u64(desc, 24);
         let section_end = pos.saturating_add(section_size);
 
         sections.push(Section {
@@ -1181,10 +1222,10 @@ fn check_volume_v1(
         issues.push(EwfIntegrityAnomaly::MediaTypeUnknown { media_type });
     }
 
-    let chunk_count = u32::from_le_bytes(vol[4..8].try_into().unwrap());
-    let sectors_per_chunk = u32::from_le_bytes(vol[8..12].try_into().unwrap());
-    let bytes_per_sector = u32::from_le_bytes(vol[12..16].try_into().unwrap());
-    let sector_count = u64::from_le_bytes(vol[16..24].try_into().unwrap());
+    let chunk_count = le_u32(vol, 4);
+    let sectors_per_chunk = le_u32(vol, 8);
+    let bytes_per_sector = le_u32(vol, 12);
+    let sector_count = le_u64(vol, 16);
 
     if bytes_per_sector != 512 && bytes_per_sector != 4096 {
         issues.push(EwfIntegrityAnomaly::BytesPerSectorInvalid { bytes_per_sector });
@@ -1210,16 +1251,12 @@ fn check_volume_v1(
     }
 
     // set_identifier GUID at ewf_data_t[64..80]
-    let set_identifier: [u8; 16] = if vol.len() >= 80 {
-        vol[64..80].try_into().unwrap()
-    } else {
-        [0u8; 16]
-    };
+    let set_identifier: [u8; 16] = array_at(vol, 64);
 
     // Adler-32 of ewf_data_t bytes 0..1048 stored at bytes 1048..1052.
     // Only present when the section body is ≥ VOLUME_DATA_FULL (1052) bytes.
     if vol.len() >= VOLUME_DATA_FULL {
-        let stored_crc = u32::from_le_bytes(vol[1048..1052].try_into().unwrap());
+        let stored_crc = le_u32(vol, 1048);
         let computed_crc = adler32(&vol[..1048]);
         if computed_crc != stored_crc {
             issues.push(EwfIntegrityAnomaly::VolumeBodyCrcMismatch {
@@ -1251,12 +1288,12 @@ fn check_table_v1(
         return;
     }
     let tbl = &data[data_start..];
-    let entry_count = u32::from_le_bytes(tbl[0..4].try_into().unwrap());
-    let base_offset = u64::from_le_bytes(tbl[8..16].try_into().unwrap());
+    let entry_count = le_u32(tbl, 0);
+    let base_offset = le_u64(tbl, 8);
 
     // Table header Adler-32: covers bytes [0..16], stored at [16..20].
     // When stored = 0 the writer chose not to include the checksum; skip check.
-    let stored_crc = u32::from_le_bytes(tbl[16..20].try_into().unwrap());
+    let stored_crc = le_u32(tbl, 16);
     if stored_crc != 0 {
         let computed_crc = adler32(&tbl[..16]);
         if computed_crc != stored_crc {
@@ -1282,7 +1319,7 @@ fn check_table_v1(
         if entry_off + 4 > data.len() {
             break;
         }
-        let raw = u32::from_le_bytes(data[entry_off..entry_off + 4].try_into().unwrap());
+        let raw = le_u32(data, entry_off);
         let chunk_rel = u64::from(raw & 0x7FFF_FFFF);
         let absolute = base_offset.saturating_add(chunk_rel);
         if absolute >= file_size {
@@ -1320,8 +1357,8 @@ fn iter_segment_chunks(data: &[u8], sections: &[Section]) -> Vec<(usize, usize, 
         return Vec::new();
     }
     let tbl = &data[tbl_data_start..];
-    let entry_count = u32::from_le_bytes(tbl[0..4].try_into().unwrap()) as usize;
-    let base_offset = u64::from_le_bytes(tbl[8..16].try_into().unwrap()) as usize;
+    let entry_count = le_u32(tbl, 0) as usize;
+    let base_offset = le_u64(tbl, 8) as usize;
     let entries_start = tbl_data_start + 24;
     let sectors_body_end = (sectors.offset + sectors.size) as usize;
 
@@ -1331,7 +1368,7 @@ fn iter_segment_chunks(data: &[u8], sections: &[Section]) -> Vec<(usize, usize, 
         if entry_off + 4 > data.len() {
             break;
         }
-        let raw = u32::from_le_bytes(data[entry_off..entry_off + 4].try_into().unwrap());
+        let raw = le_u32(data, entry_off);
         let compressed = raw & 0x8000_0000 != 0;
         let rel = (raw & 0x7FFF_FFFF) as usize;
         let start = base_offset + rel;
@@ -1341,7 +1378,7 @@ fn iter_segment_chunks(data: &[u8], sections: &[Section]) -> Vec<(usize, usize, 
             if next_off + 4 > data.len() {
                 break;
             }
-            let next_raw = u32::from_le_bytes(data[next_off..next_off + 4].try_into().unwrap());
+            let next_raw = le_u32(data, next_off);
             let next_rel = (next_raw & 0x7FFF_FFFF) as usize;
             base_offset + next_rel
         } else {
@@ -1401,7 +1438,7 @@ fn check_hash_all_segments(
             let has_uncompressed_checksum = !compressed && (raw.len() > chunk_size_usize);
             if has_uncompressed_checksum && raw.len() >= chunk_size_usize + 4 {
                 let crc_end = chunk_size_usize;
-                let stored = u32::from_le_bytes(raw[crc_end..crc_end + 4].try_into().unwrap());
+                let stored = le_u32(raw, crc_end);
                 let computed = adler32(&raw[..crc_end]);
                 if computed != stored {
                     issues.push(EwfIntegrityAnomaly::ChunkChecksumMismatch {
@@ -1465,7 +1502,7 @@ fn check_hash_all_segments(
         Some(hash_sec) => {
             let body_start = (hash_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
             if let Some(stored_slice) = last_data.get(body_start..body_start + 16) {
-                let stored: [u8; 16] = stored_slice.try_into().unwrap();
+                let stored: [u8; 16] = stored_slice.try_into().unwrap_or([0u8; 16]);
                 if computed_md5 != stored {
                     issues.push(EwfIntegrityAnomaly::HashMismatch {
                         computed: computed_md5,
@@ -1481,7 +1518,7 @@ fn check_hash_all_segments(
     if let Some(digest_sec) = last_sections.iter().find(|s| s.type_name == "digest") {
         let body_start = (digest_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
         if let Some(sha1_slice) = last_data.get(body_start + 16..body_start + 36) {
-            let stored: [u8; 20] = sha1_slice.try_into().unwrap();
+            let stored: [u8; 20] = sha1_slice.try_into().unwrap_or([0u8; 20]);
             // All-zero stored SHA-1 means "not set" — skip comparison
             if stored != [0u8; 20] && computed_sha1 != stored {
                 issues.push(EwfIntegrityAnomaly::DigestSha1Mismatch {
@@ -1573,13 +1610,13 @@ fn verify_ewf2_sector_data(
     if tbl.len() < EVF2_CHUNK_TABLE_HEADER_SIZE + EVF2_CHUNK_TABLE_ENTRY_SIZE {
         return None;
     }
-    let chunk_count = u64::from_le_bytes(tbl[8..16].try_into().unwrap()) as usize;
+    let chunk_count = le_u64(tbl, 8) as usize;
 
     // Chunk table Adler-32: covers entries[0..chunk_count] immediately after the header.
     let checksum_off = EVF2_CHUNK_TABLE_HEADER_SIZE + chunk_count * EVF2_CHUNK_TABLE_ENTRY_SIZE;
     if checksum_off + 4 <= tbl.len() {
         let computed_cs = adler32(&tbl[EVF2_CHUNK_TABLE_HEADER_SIZE..checksum_off]);
-        let stored_cs = u32::from_le_bytes(tbl[checksum_off..checksum_off + 4].try_into().unwrap());
+        let stored_cs = le_u32(tbl, checksum_off);
         if computed_cs != stored_cs {
             issues.push(EwfIntegrityAnomaly::Ewf2ChunkTableChecksumMismatch {
                 computed: computed_cs,
@@ -1597,9 +1634,9 @@ fn verify_ewf2_sector_data(
         if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() {
             break;
         }
-        let file_offset = u64::from_le_bytes(tbl[entry_off..entry_off + 8].try_into().unwrap()) as usize;
-        let chunk_data_size = u32::from_le_bytes(tbl[entry_off + 8..entry_off + 12].try_into().unwrap()) as usize;
-        let flags = u32::from_le_bytes(tbl[entry_off + 12..entry_off + 16].try_into().unwrap());
+        let file_offset = le_u64(tbl, entry_off) as usize;
+        let chunk_data_size = le_u32(tbl, entry_off + 8) as usize;
+        let flags = le_u32(tbl, entry_off + 12);
 
         // data_size includes a 4-byte Adler-32 trailer; raw sector data precedes it.
         let raw_size = chunk_data_size.saturating_sub(4);
@@ -1611,7 +1648,7 @@ fn verify_ewf2_sector_data(
         // Per-chunk Adler-32
         if chunk_data_size >= 4 {
             if let Some(crc_bytes) = data.get(file_offset + raw_size..file_offset + raw_size + 4) {
-                let stored_crc = u32::from_le_bytes(crc_bytes.try_into().unwrap());
+                let stored_crc = u32::from_le_bytes(crc_bytes.try_into().unwrap_or([0u8; 4]));
                 let computed_crc = adler32(chunk_raw);
                 if computed_crc != stored_crc {
                     issues.push(EwfIntegrityAnomaly::ChunkChecksumMismatch {
@@ -1702,10 +1739,10 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
                 break;
             }
             let desc = &data[desc_offset..desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE];
-            let section_type = u32::from_le_bytes(desc[0..4].try_into().unwrap());
-            let data_flags   = u32::from_le_bytes(desc[4..8].try_into().unwrap());
-            let prev_offset  = u64::from_le_bytes(desc[8..16].try_into().unwrap()) as usize;
-            let data_size    = u64::from_le_bytes(desc[16..24].try_into().unwrap()) as usize;
+            let section_type = le_u32(desc, 0);
+            let data_flags   = le_u32(desc, 4);
+            let prev_offset  = le_u64(desc, 8) as usize;
+            let data_size    = le_u64(desc, 16) as usize;
             let body_end   = desc_offset;
             let body_start = desc_offset.saturating_sub(data_size);
 
@@ -1730,14 +1767,14 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
         if tbl.len() < EVF2_CHUNK_TABLE_HEADER_SIZE + EVF2_CHUNK_TABLE_ENTRY_SIZE {
             continue;
         }
-        let chunk_count = u64::from_le_bytes(tbl[8..16].try_into().unwrap()) as usize;
+        let chunk_count = le_u64(tbl, 8) as usize;
 
         for i in 0..chunk_count {
             let entry_off = EVF2_CHUNK_TABLE_HEADER_SIZE + i * EVF2_CHUNK_TABLE_ENTRY_SIZE;
             if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() { break; }
-            let file_offset = u64::from_le_bytes(tbl[entry_off..entry_off + 8].try_into().unwrap()) as usize;
-            let chunk_data_size = u32::from_le_bytes(tbl[entry_off + 8..entry_off + 12].try_into().unwrap()) as usize;
-            let flags = u32::from_le_bytes(tbl[entry_off + 12..entry_off + 16].try_into().unwrap());
+            let file_offset = le_u64(tbl, entry_off) as usize;
+            let chunk_data_size = le_u32(tbl, entry_off + 8) as usize;
+            let flags = le_u32(tbl, entry_off + 12);
             let raw_size = chunk_data_size.saturating_sub(4);
             let chunk_raw = match data.get(file_offset..file_offset + raw_size) {
                 Some(r) => r,

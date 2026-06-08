@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — tool-specific format quirks and fixture tests.
 //!
 //! Two layers:

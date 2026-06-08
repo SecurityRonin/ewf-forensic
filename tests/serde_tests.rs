@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — serde Serialize/Deserialize for public types.
 //!
 //! Requires the `serde` feature flag.  Run with:

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — EWF v2 media information section parsing.
 //!
 //! Real EWF v2 media_info body: zlib-compressed, UTF-16LE with BOM (FF FE),

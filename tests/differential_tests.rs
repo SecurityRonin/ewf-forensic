@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Differential testing: ewf-forensic vs ewfverify (libewf reference implementation).
 //!
 //! For every committed fixture, both tools are run independently and the results compared.

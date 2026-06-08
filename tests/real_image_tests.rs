@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 // Integration tests against the three small E01 fixtures committed to
 // tests/data/. They run in CI on every push.
 //

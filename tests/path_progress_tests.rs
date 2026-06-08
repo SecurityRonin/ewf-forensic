@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — EwfIntegrityPath::analyse_with_progress().
 //!
 //! The path-based API must expose a progress callback so callers can report

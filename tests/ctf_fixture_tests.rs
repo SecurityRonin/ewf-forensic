@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! CTF and public-corpus EWF fixture tests — differential testing against ewfverify.
 //!
 //! Sources:

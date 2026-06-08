@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! RED phase — CLI binary `ewf-check`.
 //!
 //! Tests fail until the binary is implemented and `[[bin]]` is added to Cargo.toml.
