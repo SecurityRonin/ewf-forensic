@@ -5,7 +5,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/ewf-forensic.svg)](https://crates.io/crates/ewf-forensic)
 [![docs.rs](https://img.shields.io/docsrs/ewf-forensic)](https://docs.rs/ewf-forensic)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml)
 [![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
