@@ -28,6 +28,7 @@ required-features = ["serde"]
 serde = ["dep:serde", "forensicnomicon/serde"]
 
 [dependencies]
+adler2 = "2"
 forensicnomicon = "0.3.1"
 flate2 = "1"
 md-5 = "0.10"
