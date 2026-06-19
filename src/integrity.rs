@@ -1983,14 +1983,10 @@ fn compute_hashes_ewf1(segments: &[&[u8]]) -> Option<ComputedHashes> {
 }
 
 pub(crate) fn adler32(data: &[u8]) -> u32 {
-    const MOD: u32 = 65521;
-    let mut s1: u32 = 1;
-    let mut s2: u32 = 0;
-    for &b in data {
-        s1 = (s1 + u32::from(b)) % MOD;
-        s2 = (s2 + s1) % MOD;
-    }
-    (s2 << 16) | s1
+    // Use the maintained `adler2` crate (already in the tree via flate2),
+    // consistent with the md-5/sha1/sha2 crates used for the other EWF
+    // integrity hashes. Pinned by `adler32_matches_published_vectors`.
+    adler2::adler32_slice(data)
 }
 
 impl EwfIntegrityAnomaly {
