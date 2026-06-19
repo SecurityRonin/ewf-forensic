@@ -2053,3 +2053,19 @@ impl forensicnomicon::report::Observation for EwfIntegrityAnomaly {
         self.to_string()
     }
 }
+
+#[cfg(test)]
+mod adler32_tests {
+    use super::adler32;
+
+    /// Published Adler-32 vectors (independent of our implementation): the
+    /// RFC 1950 identity, the classic "Wikipedia" example, and "abc". This is
+    /// the real oracle the function previously lacked — it pins the byte-exact
+    /// result so the implementation can be swapped to the `adler2` crate safely.
+    #[test]
+    fn adler32_matches_published_vectors() {
+        assert_eq!(adler32(b""), 0x0000_0001);
+        assert_eq!(adler32(b"abc"), 0x024D_0127);
+        assert_eq!(adler32(b"Wikipedia"), 0x11E6_0398);
+    }
+}
