@@ -431,8 +431,8 @@ dependencies = [
 name = "ewf-forensic"
 version = "0.5.0"
 dependencies = [
- "adler2",
  "blazehash-core",
+ "ewf",
  "flate2",
  "forensicnomicon",
  "hex",

@@ -6,18 +6,28 @@ use std::fmt;
 use std::io::Read as _;
 
 // ── EWF v1 constants ─────────────────────────────────────────────────────────
+//
+// The on-disk LAYOUT facts (signature, descriptor/volume/table-header sizes and
+// their adler-32 offsets) live in `ewf::sections` — the single source of truth.
+// Re-exported here under the names the rest of this module already uses, so the
+// validation logic is unchanged while the format definitions are no longer
+// duplicated.
 
-const EVF_SIGNATURE: [u8; 8] = [0x45, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
+use ewf::sections::{
+    self, EwfVolume, SectionDescriptor, TableHeader, EVF_SIGNATURE, FILE_HEADER_SIZE,
+    SECTION_DESCRIPTOR_SIZE as EWF_SECTION_DESCRIPTOR_SIZE, TABLE_HEADER_SIZE,
+};
+
+/// Local alias kept so existing call sites read unchanged; the value is owned by
+/// `ewf::sections`.
+pub(crate) const SECTION_DESCRIPTOR_SIZE: usize = EWF_SECTION_DESCRIPTOR_SIZE;
+
 /// DiskSig/Tableau "dvf" signature — a valid EWF v1 variant.
 const DVF_SIGNATURE: [u8; 8] = [0x64, 0x76, 0x66, 0x09, 0x0d, 0x0a, 0xff, 0x00];
 /// Logical Volume Format "LVF" signature — logical evidence images.
 const LVF_SIGNATURE: [u8; 8] = [0x4c, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
 
-const FILE_HEADER_SIZE: usize = 13;
-pub(crate) const SECTION_DESCRIPTOR_SIZE: usize = 76;
 const VOLUME_DATA_MIN: usize = 24;
-/// The standard `ewf_data_t` body size (per libewf). Adler-32 at byte 1048.
-const VOLUME_DATA_FULL: usize = 1052;
 /// Valid `media_type` values from the `ewf_data_t` struct.
 const VALID_MEDIA_TYPES: &[u8] = &[0x00, 0x01, 0x03, 0x0e, 0x10];
 
@@ -1129,12 +1139,13 @@ fn parse_header_section(data: &[u8]) -> Option<EwfHeaderMetadata> {
         return None;
     }
     let desc_off = FILE_HEADER_SIZE;
-    let desc = &data[desc_off..desc_off + SECTION_DESCRIPTOR_SIZE];
-    let type_end = desc[..16].iter().position(|&b| b == 0).unwrap_or(16);
-    if &desc[..type_end] != b"header" {
+    // Locate the first section via the shared descriptor primitive; only the
+    // header-text decode below is forensic-specific.
+    let desc = SectionDescriptor::parse(&data[desc_off..], desc_off as u64).ok()?;
+    if desc.section_type != "header" {
         return None;
     }
-    let section_size = le_u64(desc, 24) as usize;
+    let section_size = desc.section_size as usize;
     let body_start = desc_off + SECTION_DESCRIPTOR_SIZE;
     let body_end = (desc_off + section_size).min(data.len());
     if body_start >= body_end {
@@ -1220,18 +1231,24 @@ fn walk_sections_v1(data: &[u8], issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<S
         if off + SECTION_DESCRIPTOR_SIZE > data.len() {
             break;
         }
-        let desc = &data[off..off + SECTION_DESCRIPTOR_SIZE];
+        let raw = &data[off..off + SECTION_DESCRIPTOR_SIZE];
 
-        let type_end = desc[..16].iter().position(|&b| b == 0).unwrap_or(16);
-        let type_name = String::from_utf8_lossy(&desc[..type_end]).into_owned();
+        // Parse the descriptor via the shared structural primitive; CRC-check it
+        // against its stored adler-32 over [0..72] (also shared).
+        let Ok(desc) = SectionDescriptor::parse(raw, pos) else {
+            break;
+        };
+        let crc_ok = desc.verify_crc(raw);
+        let stored_crc = desc.stored_crc;
+        let next = desc.next;
+        let section_size = desc.section_size;
+        let type_name = desc.section_type;
 
-        let stored_crc = le_u32(desc, 72);
-        let computed_crc = adler32(&desc[..72]);
-        if computed_crc != stored_crc {
+        if !crc_ok {
             issues.push(EwfIntegrityAnomaly::SectionDescriptorCrcMismatch {
                 offset: pos,
                 section_type: type_name.clone(),
-                computed: computed_crc,
+                computed: adler32(&raw[SectionDescriptor::crc_covers()]),
                 stored: stored_crc,
             });
         }
@@ -1243,8 +1260,6 @@ fn walk_sections_v1(data: &[u8], issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<S
             });
         }
 
-        let next = le_u64(desc, 16);
-        let section_size = le_u64(desc, 24);
         let section_end = pos.saturating_add(section_size);
 
         sections.push(Section {
@@ -1305,16 +1320,21 @@ fn check_volume_v1(
     let vol_end = (data_start + body_len).min(data.len());
     let vol = &data[data_start..vol_end];
 
-    // media_type: byte 0 of ewf_data_t (valid: 0x00/0x01/0x03/0x0e/0x10)
-    let media_type = vol[0];
-    if !VALID_MEDIA_TYPES.contains(&media_type) {
-        issues.push(EwfIntegrityAnomaly::MediaTypeUnknown { media_type });
-    }
+    // Parse the ewf_data_t body via the shared structural primitive: media_type,
+    // geometry, set_identifier, and the optional trailing adler-32 all come from
+    // `ewf::sections::EwfVolume`.
+    let parsed = EwfVolume::parse(vol).ok()?;
+    let chunk_count = parsed.chunk_count;
+    let sectors_per_chunk = parsed.sectors_per_chunk;
+    let bytes_per_sector = parsed.bytes_per_sector;
+    let sector_count = parsed.sector_count;
 
-    let chunk_count = le_u32(vol, 4);
-    let sectors_per_chunk = le_u32(vol, 8);
-    let bytes_per_sector = le_u32(vol, 12);
-    let sector_count = le_u64(vol, 16);
+    // media_type: byte 0 of ewf_data_t (valid: 0x00/0x01/0x03/0x0e/0x10)
+    if !VALID_MEDIA_TYPES.contains(&parsed.media_type) {
+        issues.push(EwfIntegrityAnomaly::MediaTypeUnknown {
+            media_type: parsed.media_type,
+        });
+    }
 
     if bytes_per_sector != 512 && bytes_per_sector != 4096 {
         issues.push(EwfIntegrityAnomaly::BytesPerSectorInvalid { bytes_per_sector });
@@ -1339,20 +1359,15 @@ fn check_volume_v1(
         }
     }
 
-    // set_identifier GUID at ewf_data_t[64..80]
-    let set_identifier: [u8; 16] = array_at(vol, 64);
+    let set_identifier = parsed.set_identifier;
 
-    // Adler-32 of ewf_data_t bytes 0..1048 stored at bytes 1048..1052.
-    // Only present when the section body is ≥ VOLUME_DATA_FULL (1052) bytes.
-    if vol.len() >= VOLUME_DATA_FULL {
-        let stored_crc = le_u32(vol, 1048);
-        let computed_crc = adler32(&vol[..1048]);
-        if computed_crc != stored_crc {
-            issues.push(EwfIntegrityAnomaly::VolumeBodyCrcMismatch {
-                computed: computed_crc,
-                stored: stored_crc,
-            });
-        }
+    // Adler-32 of ewf_data_t bytes [0..1048] stored at [1048..1052]; the shared
+    // primitive reports it only when the body is ≥ 1052 bytes.
+    if parsed.verify_crc(vol) == Some(false) {
+        issues.push(EwfIntegrityAnomaly::VolumeBodyCrcMismatch {
+            computed: adler32(&vol[EwfVolume::crc_covers()]),
+            stored: parsed.stored_crc.unwrap_or(0),
+        });
     }
 
     Some(VolumeGeometry {
@@ -1373,24 +1388,26 @@ fn check_table_v1(
     issues: &mut Vec<EwfIntegrityAnomaly>,
 ) {
     let data_start = (desc_offset as usize) + SECTION_DESCRIPTOR_SIZE;
-    if data.len() < data_start + 24 {
+    if data.len() < data_start + TABLE_HEADER_SIZE {
         return;
     }
     let tbl = &data[data_start..];
-    let entry_count = le_u32(tbl, 0);
-    let base_offset = le_u64(tbl, 8);
 
-    // Table header Adler-32: covers bytes [0..16], stored at [16..20].
-    // When stored = 0 the writer chose not to include the checksum; skip check.
-    let stored_crc = le_u32(tbl, 16);
-    if stored_crc != 0 {
-        let computed_crc = adler32(&tbl[..16]);
-        if computed_crc != stored_crc {
-            issues.push(EwfIntegrityAnomaly::TableHeaderAdler32Mismatch {
-                computed: computed_crc,
-                stored: stored_crc,
-            });
-        }
+    // Parse the table header via the shared structural primitive (entry_count,
+    // base_offset, stored adler-32 over [0..16]).
+    let Ok(header) = TableHeader::parse(tbl) else {
+        return;
+    };
+    let entry_count = header.entry_count;
+    let base_offset = header.base_offset;
+
+    // Table header Adler-32 covers [0..16], stored at [16..20]. A stored value of
+    // 0 means the writer omitted it (verify_crc → None), so the check is skipped.
+    if header.verify_crc(tbl) == Some(false) {
+        issues.push(EwfIntegrityAnomaly::TableHeaderAdler32Mismatch {
+            computed: adler32(&tbl[TableHeader::crc_covers()]),
+            stored: header.stored_crc,
+        });
     }
 
     if let Some(vol_count) = volume_chunk_count {
@@ -1402,14 +1419,17 @@ fn check_table_v1(
         }
     }
 
-    let entries_start = data_start + 24;
+    let entries_start = data_start + TABLE_HEADER_SIZE;
     for i in 0..entry_count {
         let entry_off = entries_start + (i as usize) * 4;
-        if entry_off + 4 > data.len() {
+        let Some(entry_bytes) = data.get(entry_off..entry_off + 4) else {
             break;
-        }
-        let raw = le_u32(data, entry_off);
-        let chunk_rel = u64::from(raw & 0x7FFF_FFFF);
+        };
+        // Shared bit-split: bit 31 = compressed, bits 0..30 = relative offset.
+        let Ok(entry) = sections::TableEntry::parse(entry_bytes) else {
+            break;
+        };
+        let chunk_rel = u64::from(entry.chunk_offset);
         let absolute = base_offset.saturating_add(chunk_rel);
         if absolute >= file_size {
             issues.push(EwfIntegrityAnomaly::TableEntryOutOfBounds {
@@ -1442,33 +1462,39 @@ fn iter_segment_chunks(data: &[u8], sections: &[Section]) -> Vec<(usize, usize, 
     };
 
     let tbl_data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
-    if data.len() < tbl_data_start + 24 {
+    if data.len() < tbl_data_start + TABLE_HEADER_SIZE {
         return Vec::new();
     }
     let tbl = &data[tbl_data_start..];
-    let entry_count = le_u32(tbl, 0) as usize;
-    let base_offset = le_u64(tbl, 8) as usize;
-    let entries_start = tbl_data_start + 24;
+    // Shared table-header parse (entry_count + base_offset).
+    let Ok(header) = TableHeader::parse(tbl) else {
+        return Vec::new();
+    };
+    let entry_count = header.entry_count as usize;
+    let base_offset = header.base_offset as usize;
+    let entries_start = tbl_data_start + TABLE_HEADER_SIZE;
     let sectors_body_end = (sectors.offset + sectors.size) as usize;
+
+    // Decode one table entry's (compressed, relative-offset) via the shared
+    // bit-split, yielding None when the 4 bytes are out of range.
+    let entry_at = |idx: usize| -> Option<(bool, usize)> {
+        let off = entries_start + idx * 4;
+        let bytes = data.get(off..off + 4)?;
+        let e = sections::TableEntry::parse(bytes).ok()?;
+        Some((e.compressed, e.chunk_offset as usize))
+    };
 
     let mut chunks = Vec::with_capacity(entry_count);
     for i in 0..entry_count {
-        let entry_off = entries_start + i * 4;
-        if entry_off + 4 > data.len() {
+        let Some((compressed, rel)) = entry_at(i) else {
             break;
-        }
-        let raw = le_u32(data, entry_off);
-        let compressed = raw & 0x8000_0000 != 0;
-        let rel = (raw & 0x7FFF_FFFF) as usize;
+        };
         let start = base_offset + rel;
 
         let end = if i + 1 < entry_count {
-            let next_off = entries_start + (i + 1) * 4;
-            if next_off + 4 > data.len() {
+            let Some((_, next_rel)) = entry_at(i + 1) else {
                 break;
-            }
-            let next_raw = le_u32(data, next_off);
-            let next_rel = (next_raw & 0x7FFF_FFFF) as usize;
+            };
             base_offset + next_rel
         } else {
             sectors_body_end.min(data.len())
@@ -1983,10 +2009,10 @@ fn compute_hashes_ewf1(segments: &[&[u8]]) -> Option<ComputedHashes> {
 }
 
 pub(crate) fn adler32(data: &[u8]) -> u32 {
-    // Use the maintained `adler2` crate (already in the tree via flate2),
-    // consistent with the md-5/sha1/sha2 crates used for the other EWF
-    // integrity hashes. Pinned by `adler32_matches_published_vectors`.
-    adler2::adler32_slice(data)
+    // Single entry point shared with the reader (`ewf::sections::adler32`), so a
+    // section CRC is computed bit-for-bit identically on both sides. Pinned by
+    // `adler32_matches_published_vectors`.
+    sections::adler32(data)
 }
 
 impl EwfIntegrityAnomaly {
@@ -2055,9 +2081,9 @@ mod adler32_tests {
     use super::adler32;
 
     /// Published Adler-32 vectors (independent of our implementation): the
-    /// RFC 1950 identity, the classic "Wikipedia" example, and "abc". This is
-    /// the real oracle the function previously lacked — it pins the byte-exact
-    /// result so the implementation can be swapped to the `adler2` crate safely.
+    /// RFC 1950 identity, the classic "Wikipedia" example, and "abc". Pins the
+    /// byte-exact result of the shared `ewf::sections::adler32` entry point that
+    /// this module's `adler32` now delegates to.
     #[test]
     fn adler32_matches_published_vectors() {
         assert_eq!(adler32(b""), 0x0000_0001);

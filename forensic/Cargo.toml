@@ -31,7 +31,11 @@ required-features = ["serde"]
 serde = ["dep:serde", "forensicnomicon/serde"]
 
 [dependencies]
-adler2 = "2"
+# The EWF v1 on-disk structural primitives (signatures, descriptor/volume/
+# table-header layout + stored adler-32 CRCs) live in the reader's `ewf::sections`
+# — the single source of truth. Only the structural parser is consumed here, NOT
+# the reader's data / Read+Seek interface.
+ewf = { workspace = true }
 forensicnomicon = "0.3.1"
 flate2 = "1"
 md-5 = "0.10"
