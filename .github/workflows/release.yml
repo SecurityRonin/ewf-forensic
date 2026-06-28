@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.96.0 # MUST match rust-toolchain.toml — a cross-target on @stable + a pinned toml = E0463
         with:
           targets: ${{ matrix.target }}
 
@@ -152,7 +152,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.96.0 # MUST match rust-toolchain.toml — a cross-target on @stable + a pinned toml = E0463
         with:
           targets: ${{ matrix.target }}
 
