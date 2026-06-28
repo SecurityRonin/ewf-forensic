@@ -1,6 +1,6 @@
 [package]
 name = "ewf-forensic"
-version = "0.5.0"
+version = "0.6.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Forensic integrity analysis and repair for EWF (Expert Witness Format / E01) images"
@@ -36,7 +36,7 @@ serde = ["dep:serde", "forensicnomicon/serde"]
 # — the single source of truth. Only the structural parser is consumed here, NOT
 # the reader's data / Read+Seek interface.
 ewf = { workspace = true }
-forensicnomicon = "0.3.1"
+forensicnomicon = "1"
 flate2 = "1"
 md-5 = "0.10"
 memmap2 = "0.9"
