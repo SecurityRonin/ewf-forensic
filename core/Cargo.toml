@@ -1,0 +1,36 @@
+[package]
+name = "ewf"
+version = "0.3.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Pure Rust reader for Expert Witness Format (E01/EWF) forensic disk images"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/ewf"
+authors.workspace = true
+keywords = ["forensics", "ewf", "e01", "encase", "disk-image"]
+categories = ["parser-implementations", "filesystem"]
+readme = "README.md"
+exclude = ["tests/data/", "tarpaulin-report.json"]
+
+[features]
+default = ["verify"]
+verify = ["dep:md-5", "dep:sha-1"]
+
+[dependencies]
+flate2 = { workspace = true }
+lru = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+glob = { workspace = true }
+md-5 = { workspace = true, optional = true }
+sha-1 = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+md-5 = { workspace = true }
+
+[lints]
+workspace = true

@@ -14,8 +14,13 @@ allow = [
     "Zlib",
 ]
 
+# Consolidating the reader (rayon/crossbeam) and the analyzer (indicatif/memmap2)
+# dep graphs introduces transitive duplicates (e.g. two windows-sys majors) that
+# neither standalone repo had. Downgraded to a warning for the combined workspace
+# — forcing a single version across two large, independently-maintained subtrees
+# is not worth a hard CI fail. Advisories/licenses/sources stay strict.
 [bans]
-multiple-versions = "deny"
+multiple-versions = "warn"
 wildcards = "deny"
 
 [sources]

@@ -1,90 +1,63 @@
-[package]
-name = "ewf-forensic"
-version = "0.5.0"
+[workspace]
+resolver = "2"
+members = ["core", "cli", "forensic"]
+# The two cargo-fuzz crates are self-contained (nightly-only libfuzzer) and each
+# carries its own `[workspace]`, so they are excluded from this stable workspace.
+exclude = ["core/fuzz", "forensic/fuzz"]
+
+# Single source of truth for fields shared (identical) by every member (DRY).
+# `version` is NOT hoisted: the reader (core/cli, 0.3.0) and the analyzer
+# (forensic, 0.5.0) are versioned independently, so each keeps its own `version`
+# inline. `keywords`/`documentation` also stay per-crate (they differ by crate).
+[workspace.package]
 edition = "2021"
 rust-version = "1.85"
-description = "Forensic integrity analysis and repair for EWF (Expert Witness Format / E01) images"
 license = "Apache-2.0"
 repository = "https://github.com/SecurityRonin/ewf-forensic"
-authors = ["Albert Hui"]
-keywords = ["forensics", "ewf", "e01", "integrity", "tampering"]
-categories = ["parser-implementations"]
-# Keep the published package under crates.io's 10 MiB limit — test E01 corpora
-# and fuzz artifacts are not needed to build the crate.
-exclude = ["tests/data/", "fuzz/", "corpus/", "benches/", ".github/"]
+homepage = "https://github.com/SecurityRonin/ewf-forensic"
+authors = ["Albert Hui <albert@securityronin.com>"]
 
-[lib]
-name = "ewf_forensic"
-
-[[bin]]
-name = "ewf-check"
-path = "src/bin/ewf_check.rs"
-
-[[test]]
-name = "serde_tests"
-required-features = ["serde"]
-
-[features]
-serde = ["dep:serde", "forensicnomicon/serde"]
-
-[dependencies]
-adler2 = "2"
-forensicnomicon = "0.3.1"
+# Single source of truth for dependency versions (DRY): declare each once;
+# members write `dep.workspace = true`. The inter-crate `ewf` (the reader) version
+# lives here too, so a bump touches one line. The reader's deps are hoisted; the
+# analyzer (forensic) keeps its own deps inline (different version pins / oracle).
+[workspace.dependencies]
+ewf = { path = "core", version = "0.3.0" }
 flate2 = "1"
+lru = "0.12"
+rayon = "1"
+thiserror = "2"
+log = "0.4"
+glob = "0.3"
 md-5 = "0.10"
-memmap2 = "0.9"
-sha1 = "0.10"
-sha2 = "0.10"
-serde = { version = "1", features = ["derive"], optional = true }
-indicatif = "0.17"
-
-[dev-dependencies]
-tempfile = "3"
-md-5 = "0.10"
-sha1 = "0.10"
-hex = "0.4"
+sha-1 = "0.10"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Oracle for doer-checker TDD: blazehash independently computes expected hashes
-blazehash = { version = "0.2.4", default-features = false }
-proptest = "1"
+tempfile = "3"
 
-# `deny` (not `forbid`) because the path-based analyser needs exactly one
-# audited `unsafe`: read-only `memmap2::Mmap::map` of immutable evidence files.
-# Every other `unsafe` is still a hard error; the mmap sites opt in explicitly
-# with a justified `#[allow(unsafe_code)]`.
-[lints.rust]
-unsafe_code = "deny"
+# The reader (core/cli) is `forbid(unsafe)` and uses this paranoid lint set.
+# The analyzer (forensic) needs exactly one audited mmap `unsafe`, so it keeps
+# its OWN inline `[lints]` (`unsafe_code = "deny"` + bounded allow) rather than
+# inheriting this — the two cannot share one workspace lint table.
+[workspace.lints.rust]
+unsafe_code = "forbid"
 
-[lints.clippy]
-pedantic              = { level = "warn", priority = -1 }
-correctness           = { level = "deny",  priority = -1 }
-suspicious            = { level = "deny",  priority = -1 }
-unwrap_used           = { level = "deny",  priority = 0  }
-expect_used           = { level = "deny",  priority = 0  }
-# Pragmatic allows (priority 1 overrides the grouped `pedantic = warn`). These are
-# stylistic/structural lints with no bearing on the panic-free, bounds-checked
-# parsing guarantee; the safety-relevant lints above stay hard denies.
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
 module_name_repetitions = { level = "allow", priority = 1 }
-must_use_candidate    = { level = "allow", priority = 1 }
-must_use_unit         = { level = "allow", priority = 1 }
-missing_errors_doc    = { level = "allow", priority = 1 }
-missing_panics_doc    = { level = "allow", priority = 1 }
+must_use_candidate = { level = "allow", priority = 1 }
+missing_errors_doc = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
 cast_possible_truncation = { level = "allow", priority = 1 }
-cast_possible_wrap    = { level = "allow", priority = 1 }
-cast_sign_loss        = { level = "allow", priority = 1 }
-cast_precision_loss   = { level = "allow", priority = 1 }
-cast_lossless         = { level = "allow", priority = 1 }
-# Structural/idiomatic allows kept deliberately. Each is either high-volume
-# noise inherent to spec-driven forensic code or a readability trade-off that
-# fixing would worsen; none affects the panic-free, bounds-checked guarantee.
-match_same_arms       = { level = "allow", priority = 1 } # anomaly enums map many distinct arms to the same severity/category by design; merging hides the spec mapping
-doc_markdown          = { level = "allow", priority = 1 } # docs cite spec field names / hex offsets that are not real code items
-return_self_not_must_use = { level = "allow", priority = 1 } # builder-style setters
-manual_let_else       = { level = "allow", priority = 1 } # explicit match/if-let reads clearer in the parsers
-similar_names         = { level = "allow", priority = 1 } # md5/sha1/sha256, table1/table2 etc. are intentionally parallel
-too_many_lines        = { level = "allow", priority = 1 } # large spec-driven section/parse functions
-too_many_arguments    = { level = "allow", priority = 1 } # builders mirror on-disk field sets
-struct_excessive_bools = { level = "allow", priority = 1 } # presence flags mirror on-disk section presence
-trivially_copy_pass_by_ref = { level = "allow", priority = 1 } # uniform &-by-ref signatures across the parser API
-format_collect        = { level = "allow", priority = 1 } # hex-string helpers in tests
-format_push_string    = { level = "allow", priority = 1 } # report builders push formatted lines
+cast_possible_wrap = { level = "allow", priority = 1 }
+cast_sign_loss = { level = "allow", priority = 1 }
+cast_precision_loss = { level = "allow", priority = 1 }
+format_push_string = { level = "allow", priority = 1 }
+format_collect = { level = "allow", priority = 1 }
+too_many_lines = { level = "allow", priority = 1 }
+items_after_statements = { level = "allow", priority = 1 }
+similar_names = { level = "allow", priority = 1 }
+manual_let_else = { level = "allow", priority = 1 }

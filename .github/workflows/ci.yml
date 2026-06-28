@@ -30,7 +30,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
     name: Test
@@ -39,7 +39,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
-      - run: cargo test
+      # Whole workspace: reader (core, incl. real-corpus e2e_dftt /
+      # corpus_differential / lazy_byte_identity / segment_source_identity),
+      # the CLI, and the forensic analyzer's integrity suite.
+      - run: cargo test --workspace
 
   msrv:
     name: MSRV (1.85)
@@ -48,7 +51,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dtolnay/rust-toolchain@1.85
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
-      - run: cargo test
+      - run: cargo test --workspace
 
   deny:
     name: Cargo Deny
@@ -93,9 +96,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
-          workspaces: fuzz -> fuzz/target
+          workspaces: |
+            forensic/fuzz -> forensic/fuzz/target
+            core/fuzz -> core/fuzz/target
       - run: cargo install cargo-fuzz
-      - run: cargo +nightly fuzz run fuzz_integrity -- -max_total_time=30
-        working-directory: .
-      - run: cargo +nightly fuzz run fuzz_repair -- -max_total_time=30
-        working-directory: .
+      # Each member owns its own cargo-fuzz workspace under <member>/fuzz.
+      - name: Fuzz forensic analyzer targets
+        working-directory: forensic
+        run: |
+          cargo +nightly fuzz run fuzz_integrity -- -max_total_time=30
+          cargo +nightly fuzz run fuzz_repair -- -max_total_time=30
+      - name: Fuzz reader targets
+        working-directory: core
+        run: |
+          cargo +nightly fuzz run parse_header -- -max_total_time=30
+          cargo +nightly fuzz run parse_segment -- -max_total_time=30

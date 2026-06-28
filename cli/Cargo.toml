@@ -1,0 +1,39 @@
+[package]
+name = "ewf-cli"
+version = "0.3.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "CLI and MCP server for EWF (E01) forensic disk image inspection"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/ewf-cli"
+authors.workspace = true
+keywords = ["forensics", "ewf", "e01", "encase", "disk-image"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "ewf"
+path = "src/main.rs"
+
+[dependencies]
+ewf = { workspace = true }
+clap = { workspace = true }
+glob = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[package.metadata.deb]
+maintainer = "SecurityRonin <security-ronin@users.noreply.github.com>"
+section = "utils"
+priority = "optional"
+extended-description = """\
+ewf is a CLI tool and MCP server for inspecting EWF (E01) forensic disk images. \
+Commands: info, verify, read, sections, search, extract. \
+The mcp subcommand starts a JSON-RPC stdio server for AI-assisted forensic analysis."""
+assets = [
+    ["target/release/ewf", "usr/bin/", "755"],
+]
+
+[lints]
+workspace = true

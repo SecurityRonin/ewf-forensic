@@ -1,0 +1,97 @@
+[package]
+name = "ewf-forensic"
+version = "0.5.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Forensic integrity analysis and repair for EWF (Expert Witness Format / E01) images"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/ewf-forensic"
+authors.workspace = true
+keywords = ["forensics", "ewf", "e01", "integrity", "tampering"]
+categories = ["parser-implementations"]
+readme = "../README.md"
+# Keep the published package under crates.io's 10 MiB limit — test E01 corpora
+# and fuzz artifacts are not needed to build the crate.
+exclude = ["tests/data/", "fuzz/", "corpus/", "benches/", ".github/"]
+
+[lib]
+name = "ewf_forensic"
+
+[[bin]]
+name = "ewf-check"
+path = "src/bin/ewf_check.rs"
+
+[[test]]
+name = "serde_tests"
+required-features = ["serde"]
+
+[features]
+serde = ["dep:serde", "forensicnomicon/serde"]
+
+[dependencies]
+adler2 = "2"
+forensicnomicon = "0.3.1"
+flate2 = "1"
+md-5 = "0.10"
+memmap2 = "0.9"
+sha1 = "0.10"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"], optional = true }
+indicatif = "0.17"
+
+[dev-dependencies]
+tempfile = "3"
+md-5 = "0.10"
+sha1 = "0.10"
+hex = "0.4"
+serde_json = "1"
+# Oracle for doer-checker TDD: blazehash-core independently computes expected
+# hashes via `algorithm::hash_bytes` — the lean hash engine (no GPU/cloud/DuckDB/
+# config deps), aliased to `blazehash` so the `blazehash::algorithm::{…}` import
+# path is unchanged. (The full `blazehash` 0.2.4 binary crate fails to build with
+# default-features = false, referencing toml/dirs behind a disabled feature.)
+blazehash = { package = "blazehash-core", version = "0.2.4" }
+proptest = "1"
+
+# `deny` (not `forbid`) because the path-based analyser needs exactly one
+# audited `unsafe`: read-only `memmap2::Mmap::map` of immutable evidence files.
+# Every other `unsafe` is still a hard error; the mmap sites opt in explicitly
+# with a justified `#[allow(unsafe_code)]`.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+pedantic              = { level = "warn", priority = -1 }
+correctness           = { level = "deny",  priority = -1 }
+suspicious            = { level = "deny",  priority = -1 }
+unwrap_used           = { level = "deny",  priority = 0  }
+expect_used           = { level = "deny",  priority = 0  }
+# Pragmatic allows (priority 1 overrides the grouped `pedantic = warn`). These are
+# stylistic/structural lints with no bearing on the panic-free, bounds-checked
+# parsing guarantee; the safety-relevant lints above stay hard denies.
+module_name_repetitions = { level = "allow", priority = 1 }
+must_use_candidate    = { level = "allow", priority = 1 }
+must_use_unit         = { level = "allow", priority = 1 }
+missing_errors_doc    = { level = "allow", priority = 1 }
+missing_panics_doc    = { level = "allow", priority = 1 }
+cast_possible_truncation = { level = "allow", priority = 1 }
+cast_possible_wrap    = { level = "allow", priority = 1 }
+cast_sign_loss        = { level = "allow", priority = 1 }
+cast_precision_loss   = { level = "allow", priority = 1 }
+cast_lossless         = { level = "allow", priority = 1 }
+# Structural/idiomatic allows kept deliberately. Each is either high-volume
+# noise inherent to spec-driven forensic code or a readability trade-off that
+# fixing would worsen; none affects the panic-free, bounds-checked guarantee.
+match_same_arms       = { level = "allow", priority = 1 } # anomaly enums map many distinct arms to the same severity/category by design; merging hides the spec mapping
+doc_markdown          = { level = "allow", priority = 1 } # docs cite spec field names / hex offsets that are not real code items
+return_self_not_must_use = { level = "allow", priority = 1 } # builder-style setters
+manual_let_else       = { level = "allow", priority = 1 } # explicit match/if-let reads clearer in the parsers
+similar_names         = { level = "allow", priority = 1 } # md5/sha1/sha256, table1/table2 etc. are intentionally parallel
+too_many_lines        = { level = "allow", priority = 1 } # large spec-driven section/parse functions
+too_many_arguments    = { level = "allow", priority = 1 } # builders mirror on-disk field sets
+struct_excessive_bools = { level = "allow", priority = 1 } # presence flags mirror on-disk section presence
+trivially_copy_pass_by_ref = { level = "allow", priority = 1 } # uniform &-by-ref signatures across the parser API
+format_collect        = { level = "allow", priority = 1 } # hex-string helpers in tests
+format_push_string    = { level = "allow", priority = 1 } # report builders push formatted lines
