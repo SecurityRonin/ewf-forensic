@@ -24,6 +24,9 @@ authors = ["Albert Hui <albert@securityronin.com>"]
 [workspace.dependencies]
 ewf = { path = "core", version = "0.3.0" }
 flate2 = "1"
+# adler-32 over EWF section CRCs (the section-checksum format fact). Already in
+# the tree via flate2; declared directly so `ewf::sections` can compute it.
+adler2 = "2"
 lru = "0.12"
 rayon = "1"
 thiserror = "2"

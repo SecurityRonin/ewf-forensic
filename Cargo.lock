@@ -404,6 +404,7 @@ dependencies = [
 name = "ewf"
 version = "0.3.0"
 dependencies = [
+ "adler2",
  "flate2",
  "glob",
  "log",

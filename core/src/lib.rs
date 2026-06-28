@@ -15,7 +15,12 @@ mod error;
 pub(crate) mod ewf2;
 mod parse;
 mod reader;
-mod sections;
+/// EWF v1 on-disk structural primitives: signatures, descriptor / volume /
+/// table-header / table-entry layout, their stored adler-32 CRCs, and the shared
+/// [`sections::adler32`] entry point. This is the single source of truth for the
+/// EWF v1 layout — consumers (e.g. an integrity auditor) parse and CRC-check
+/// against these instead of re-deriving offsets.
+pub mod sections;
 mod segment_source;
 mod types;
 
@@ -23,7 +28,10 @@ mod types;
 pub use error::{EwfError, Result};
 pub use parse::parse_error2_data;
 pub use reader::EwfReader;
-pub use sections::{EwfFileHeader, EwfVolume, SectionDescriptor, TableEntry, EVF_SIGNATURE};
+pub use sections::{
+    EwfFileHeader, EwfVolume, SectionDescriptor, TableEntry, TableHeader, EVF_SIGNATURE,
+    FILE_HEADER_SIZE, SECTION_DESCRIPTOR_SIZE, TABLE_HEADER_SIZE,
+};
 pub use segment_source::SegmentSource;
 #[cfg(feature = "verify")]
 pub use types::VerifyResult;
