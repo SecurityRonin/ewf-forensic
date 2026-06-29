@@ -44,6 +44,35 @@ pub enum SegmentSource {
     },
     /// An in-RAM segment (e.g. an inflated zip entry).
     Mem(Arc<[u8]>),
+    /// A lazy positioned-read backing behind a trait object — the ONE vtable
+    /// variant. Used when a compressed segment must be read WITHOUT inflating it
+    /// whole into RAM (a zran seekable-DEFLATE reader, or a temp-spill file); the
+    /// `File`/`Sub`/`Mem` arms stay inline and vtable-free.
+    Backing(Arc<dyn SegmentBacking>),
+}
+
+/// A positioned-read backing for a [`SegmentSource::Backing`] segment.
+///
+/// Lets a caller (e.g. issen) plug in a lazy reader — a zran seekable-DEFLATE
+/// reader, or a temp-spill file — so an EWF segment stored compressed inside an
+/// archive is read without materializing the whole inflated segment in RAM.
+/// `Send + Sync` so a `&[SegmentSource]` stays usable across the reader's worker
+/// threads, exactly like the inline backings.
+pub trait SegmentBacking: Send + Sync {
+    /// Fill `buf` from logical `offset` within the segment; return the byte count
+    /// (short only at end of segment).
+    ///
+    /// # Errors
+    /// Propagates the backing's I/O or decode error.
+    fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize>;
+
+    /// Total length of the segment in bytes.
+    fn len(&self) -> u64;
+
+    /// Whether the segment is empty.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl SegmentSource {
@@ -59,6 +88,14 @@ impl SegmentSource {
         SegmentSource::Mem(bytes.into())
     }
 
+    /// Construct a [`SegmentSource::Backing`] from a lazy positioned-read backing
+    /// (a zran reader / temp-spill), so a compressed segment is read without
+    /// inflating it whole into RAM.
+    #[must_use]
+    pub fn from_backing(backing: Arc<dyn SegmentBacking>) -> Self {
+        SegmentSource::Backing(backing)
+    }
+
     /// Total length of this segment in bytes.
     #[must_use]
     pub fn len(&self) -> u64 {
@@ -66,6 +103,7 @@ impl SegmentSource {
             SegmentSource::File(f) => f.metadata().map_or(0, |m| m.len()),
             SegmentSource::Sub { len, .. } => *len,
             SegmentSource::Mem(b) => b.len() as u64,
+            SegmentSource::Backing(b) => b.len(),
         }
     }
 
@@ -102,6 +140,7 @@ impl SegmentSource {
                 buf[..n].copy_from_slice(&src[..n]);
                 Ok(n)
             }
+            SegmentSource::Backing(_) => Err(io::Error::other("Backing::read_at: unimplemented")),
         }
     }
 }
@@ -116,7 +155,45 @@ impl std::fmt::Debug for SegmentSource {
                 .field("len", len)
                 .finish(),
             SegmentSource::Mem(b) => f.debug_struct("Mem").field("len", &b.len()).finish(),
+            SegmentSource::Backing(b) => f.debug_struct("Backing").field("len", &b.len()).finish(),
         }
+    }
+}
+
+#[cfg(test)]
+mod backing_tests {
+    use super::*;
+
+    /// A tiny in-RAM backing standing in for a real zran reader.
+    struct VecBacking(Vec<u8>);
+    impl SegmentBacking for VecBacking {
+        fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+            let off = (offset as usize).min(self.0.len());
+            let src = &self.0[off..];
+            let n = src.len().min(buf.len());
+            buf[..n].copy_from_slice(&src[..n]);
+            Ok(n)
+        }
+        fn len(&self) -> u64 {
+            self.0.len() as u64
+        }
+    }
+
+    #[test]
+    fn backing_variant_routes_read_at_and_len() {
+        let data: Vec<u8> = (0u8..=200).collect();
+        let src = SegmentSource::from_backing(Arc::new(VecBacking(data.clone())));
+        assert_eq!(src.len(), data.len() as u64);
+        assert!(!src.is_empty());
+        let mut buf = [0u8; 10];
+        let n = src.read_at(&mut buf, 50).expect("read_at");
+        assert_eq!(n, 10);
+        assert_eq!(buf, data[50..60]);
+        // short read at the tail
+        let mut tail = [0u8; 8];
+        let n = src.read_at(&mut tail, 198).expect("read_at tail");
+        assert_eq!(n, 3, "only 3 bytes (198,199,200) remain");
+        assert_eq!(&tail[..3], &data[198..201]);
     }
 }
 
