@@ -327,7 +327,7 @@ fn parse_hex_fixed<const N: usize>(hex: &str, flag: &str) -> [u8; N] {
     for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
         let s = std::str::from_utf8(chunk).unwrap_or("??");
         if let Ok(b) = u8::from_str_radix(s, 16) {
-            out[i] = b
+            out[i] = b;
         } else {
             eprintln!("error: {flag} contains invalid hex character in '{s}'");
             process::exit(2);

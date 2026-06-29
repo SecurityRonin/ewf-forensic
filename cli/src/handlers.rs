@@ -37,7 +37,7 @@ pub fn handle_ewf_info(path: &str) -> Result<Value, String> {
 }
 
 pub fn handle_ewf_verify(path: &str) -> Result<Value, String> {
-    let mut reader = ewf::EwfReader::open(path).map_err(|e| format!("{e}"))?;
+    let reader = ewf::EwfReader::open(path).map_err(|e| format!("{e}"))?;
     let result = reader.verify().map_err(|e| format!("{e}"))?;
 
     Ok(json!({

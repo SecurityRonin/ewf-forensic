@@ -2968,7 +2968,7 @@ mod tests {
         tmp.write_all(&src_data).unwrap();
         tmp.flush().unwrap();
 
-        let mut reader = EwfReader::open(tmp.path()).unwrap();
+        let reader = EwfReader::open(tmp.path()).unwrap();
 
         // Truncate after opening — chunk data is gone
         tmp.as_file().set_len(1024).unwrap();

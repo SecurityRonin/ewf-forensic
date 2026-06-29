@@ -846,7 +846,8 @@ impl EwfReader {
                         stored_sha1 = Some(hash);
                         log::debug!("parsed v2 sha1_hash section: {hash:02x?}");
                     }
-                    ewf2::Ewf2SectionType::Done | ewf2::Ewf2SectionType::Next => {}
+                    // Done / Next are terminal markers and any unrecognized
+                    // section type is a no-op here (data already extracted above).
                     _ => {}
                 }
             }

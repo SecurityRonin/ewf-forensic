@@ -22,7 +22,7 @@ authors = ["Albert Hui <albert@securityronin.com>"]
 # lives here too, so a bump touches one line. The reader's deps are hoisted; the
 # analyzer (forensic) keeps its own deps inline (different version pins / oracle).
 [workspace.dependencies]
-ewf = { path = "core", version = "0.3.0" }
+ewf = { path = "core", version = "0.4.0" }
 flate2 = "1"
 # adler-32 over EWF section CRCs (the section-checksum format fact). Already in
 # the tree via flate2; declared directly so `ewf::sections` can compute it.
@@ -51,6 +51,9 @@ pedantic = { level = "warn", priority = -1 }
 correctness = { level = "deny", priority = -1 }
 suspicious = { level = "deny", priority = -1 }
 module_name_repetitions = { level = "allow", priority = 1 }
+# Byte-layout diagrams in doc comments (offset tables, descriptor maps) read as
+# prose tokens to the lint; backticking every offset is noise, not clarity.
+doc_markdown = { level = "allow", priority = 1 }
 must_use_candidate = { level = "allow", priority = 1 }
 missing_errors_doc = { level = "allow", priority = 1 }
 missing_panics_doc = { level = "allow", priority = 1 }
