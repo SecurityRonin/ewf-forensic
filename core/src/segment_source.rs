@@ -140,7 +140,7 @@ impl SegmentSource {
                 buf[..n].copy_from_slice(&src[..n]);
                 Ok(n)
             }
-            SegmentSource::Backing(_) => Err(io::Error::other("Backing::read_at: unimplemented")),
+            SegmentSource::Backing(b) => b.read_at(buf, offset),
         }
     }
 }
@@ -157,43 +157,6 @@ impl std::fmt::Debug for SegmentSource {
             SegmentSource::Mem(b) => f.debug_struct("Mem").field("len", &b.len()).finish(),
             SegmentSource::Backing(b) => f.debug_struct("Backing").field("len", &b.len()).finish(),
         }
-    }
-}
-
-#[cfg(test)]
-mod backing_tests {
-    use super::*;
-
-    /// A tiny in-RAM backing standing in for a real zran reader.
-    struct VecBacking(Vec<u8>);
-    impl SegmentBacking for VecBacking {
-        fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
-            let off = (offset as usize).min(self.0.len());
-            let src = &self.0[off..];
-            let n = src.len().min(buf.len());
-            buf[..n].copy_from_slice(&src[..n]);
-            Ok(n)
-        }
-        fn len(&self) -> u64 {
-            self.0.len() as u64
-        }
-    }
-
-    #[test]
-    fn backing_variant_routes_read_at_and_len() {
-        let data: Vec<u8> = (0u8..=200).collect();
-        let src = SegmentSource::from_backing(Arc::new(VecBacking(data.clone())));
-        assert_eq!(src.len(), data.len() as u64);
-        assert!(!src.is_empty());
-        let mut buf = [0u8; 10];
-        let n = src.read_at(&mut buf, 50).expect("read_at");
-        assert_eq!(n, 10);
-        assert_eq!(buf, data[50..60]);
-        // short read at the tail
-        let mut tail = [0u8; 8];
-        let n = src.read_at(&mut tail, 198).expect("read_at tail");
-        assert_eq!(n, 3, "only 3 bytes (198,199,200) remain");
-        assert_eq!(&tail[..3], &data[198..201]);
     }
 }
 
@@ -243,5 +206,42 @@ impl Seek for SegmentCursor<'_> {
         }
         self.pos = new_pos as u64;
         Ok(self.pos)
+    }
+}
+
+#[cfg(test)]
+mod backing_tests {
+    use super::*;
+
+    /// A tiny in-RAM backing standing in for a real zran reader.
+    struct VecBacking(Vec<u8>);
+    impl SegmentBacking for VecBacking {
+        fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+            let off = (offset as usize).min(self.0.len());
+            let src = &self.0[off..];
+            let n = src.len().min(buf.len());
+            buf[..n].copy_from_slice(&src[..n]);
+            Ok(n)
+        }
+        fn len(&self) -> u64 {
+            self.0.len() as u64
+        }
+    }
+
+    #[test]
+    fn backing_variant_routes_read_at_and_len() {
+        let data: Vec<u8> = (0u8..=200).collect();
+        let src = SegmentSource::from_backing(Arc::new(VecBacking(data.clone())));
+        assert_eq!(src.len(), data.len() as u64);
+        assert!(!src.is_empty());
+        let mut buf = [0u8; 10];
+        let n = src.read_at(&mut buf, 50).expect("read_at");
+        assert_eq!(n, 10);
+        assert_eq!(buf, data[50..60]);
+        // short read at the tail
+        let mut tail = [0u8; 8];
+        let n = src.read_at(&mut tail, 198).expect("read_at tail");
+        assert_eq!(n, 3, "only 3 bytes (198,199,200) remain");
+        assert_eq!(&tail[..3], &data[198..201]);
     }
 }

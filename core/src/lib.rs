@@ -32,7 +32,7 @@ pub use sections::{
     EwfFileHeader, EwfVolume, SectionDescriptor, TableEntry, TableHeader, EVF_SIGNATURE,
     FILE_HEADER_SIZE, SECTION_DESCRIPTOR_SIZE, TABLE_HEADER_SIZE,
 };
-pub use segment_source::SegmentSource;
+pub use segment_source::{SegmentBacking, SegmentSource};
 #[cfg(feature = "verify")]
 pub use types::VerifyResult;
 pub use types::{AcquisitionError, EwfMetadata, StoredHashes};
