@@ -35,6 +35,11 @@ sha-1 = { workspace = true, optional = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 md-5 = { workspace = true }
+# End-to-end VFS composition proof (Step 4): container -> ImageSource ->
+# SourceCursor -> NtfsFs -> FileSystem. Path deps to the local vfs branches;
+# this integration test is local-only (not run in published CI).
+ntfs-core = { path = "../../ntfs-forensic/core", features = ["vfs"] }
+forensic-vfs = "0.1"
 
 [lints]
 workspace = true
