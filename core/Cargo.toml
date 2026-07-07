@@ -17,6 +17,8 @@ exclude = ["tests/data/", "tarpaulin-report.json"]
 [features]
 default = ["verify"]
 verify = ["dep:md-5", "dep:sha-1"]
+# Implement the forensic-vfs ImageSource contract (Phase 2 wiring, ADR/design).
+vfs = ["dep:forensic-vfs"]
 
 [dependencies]
 flate2 = { workspace = true }
@@ -24,6 +26,7 @@ adler2 = { workspace = true }
 lru = { workspace = true }
 rayon = { workspace = true }
 thiserror = { workspace = true }
+forensic-vfs = { version = "0.1", optional = true }
 log = { workspace = true }
 glob = { workspace = true }
 md-5 = { workspace = true, optional = true }
