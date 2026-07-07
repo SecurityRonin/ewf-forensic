@@ -5,6 +5,25 @@
 //! buf, offset)` + `total_size()`, so this is a thin delegation behind the `vfs`
 //! feature (Phase 2 of the universal forensic VFS).
 
+use forensic_vfs::{ImageSource, VfsError, VfsResult};
+
+use crate::EwfReader;
+
+impl ImageSource for EwfReader {
+    fn len(&self) -> u64 {
+        self.total_size()
+    }
+
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
+        // Fully-qualified to select the inherent (buf, offset) reader, not this
+        // trait method; map EwfError to the VFS I/O error.
+        EwfReader::read_at(self, buf, offset).map_err(|e| VfsError::Io {
+            op: "ewf::read_at",
+            source: std::io::Error::other(e),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
