@@ -1161,8 +1161,8 @@ fn parse_header_section(data: &[u8]) -> Option<EwfHeaderMetadata> {
         return None;
     }
     let section_size = desc.section_size as usize;
-    let body_start = desc_off + SECTION_DESCRIPTOR_SIZE;
-    let body_end = (desc_off + section_size).min(data.len());
+    let body_start = desc_off.saturating_add(SECTION_DESCRIPTOR_SIZE);
+    let body_end = desc_off.saturating_add(section_size).min(data.len());
     if body_start >= body_end {
         return None;
     }
@@ -1243,10 +1243,10 @@ fn walk_sections_v1(data: &[u8], issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<S
 
     loop {
         let off = pos as usize;
-        if off + SECTION_DESCRIPTOR_SIZE > data.len() {
+        if off.saturating_add(SECTION_DESCRIPTOR_SIZE) > data.len() {
             break;
         }
-        let raw = &data[off..off + SECTION_DESCRIPTOR_SIZE];
+        let raw = &data[off..off.saturating_add(SECTION_DESCRIPTOR_SIZE)];
 
         // Parse the descriptor via the shared structural primitive; CRC-check it
         // against its stored adler-32 over [0..72] (also shared).
@@ -1298,7 +1298,7 @@ fn walk_sections_v1(data: &[u8], issues: &mut Vec<EwfIntegrityAnomaly>) -> Vec<S
 
         if next > section_end {
             let gap_offset = section_end;
-            let gap_size = next - section_end;
+            let gap_size = next.saturating_sub(section_end);
             let non_zero = data
                 .get(section_end as usize..next as usize)
                 .is_some_and(|s| s.iter().any(|&b| b != 0));
@@ -1327,12 +1327,12 @@ fn check_volume_v1(
     section_size: u64,
     issues: &mut Vec<EwfIntegrityAnomaly>,
 ) -> Option<VolumeGeometry> {
-    let data_start = (desc_offset as usize) + SECTION_DESCRIPTOR_SIZE;
-    if data.len() < data_start + VOLUME_DATA_MIN {
+    let data_start = (desc_offset as usize).saturating_add(SECTION_DESCRIPTOR_SIZE);
+    if data.len() < data_start.saturating_add(VOLUME_DATA_MIN) {
         return None;
     }
     let body_len = (section_size as usize).saturating_sub(SECTION_DESCRIPTOR_SIZE);
-    let vol_end = (data_start + body_len).min(data.len());
+    let vol_end = data_start.saturating_add(body_len).min(data.len());
     let vol = &data[data_start..vol_end];
 
     // Parse the ewf_data_t body via the shared structural primitive: media_type,
@@ -1361,7 +1361,7 @@ fn check_volume_v1(
         });
     }
 
-    let max_sectors = u64::from(chunk_count) * u64::from(sectors_per_chunk);
+    let max_sectors = u64::from(chunk_count).saturating_mul(u64::from(sectors_per_chunk));
     let min_sectors = max_sectors.saturating_sub(u64::from(sectors_per_chunk));
     if sectors_per_chunk.is_power_of_two() {
         let out_of_range =
@@ -1402,8 +1402,8 @@ fn check_table_v1(
     sectors_range: Option<(u64, u64)>,
     issues: &mut Vec<EwfIntegrityAnomaly>,
 ) {
-    let data_start = (desc_offset as usize) + SECTION_DESCRIPTOR_SIZE;
-    if data.len() < data_start + TABLE_HEADER_SIZE {
+    let data_start = (desc_offset as usize).saturating_add(SECTION_DESCRIPTOR_SIZE);
+    if data.len() < data_start.saturating_add(TABLE_HEADER_SIZE) {
         return;
     }
     let tbl = &data[data_start..];
@@ -1434,10 +1434,10 @@ fn check_table_v1(
         }
     }
 
-    let entries_start = data_start + TABLE_HEADER_SIZE;
+    let entries_start = data_start.saturating_add(TABLE_HEADER_SIZE);
     for i in 0..entry_count {
-        let entry_off = entries_start + (i as usize) * 4;
-        let Some(entry_bytes) = data.get(entry_off..entry_off + 4) else {
+        let entry_off = entries_start.saturating_add((i as usize).saturating_mul(4));
+        let Some(entry_bytes) = data.get(entry_off..entry_off.saturating_add(4)) else {
             break;
         };
         // Shared bit-split: bit 31 = compressed, bits 0..30 = relative offset.
@@ -1476,8 +1476,8 @@ fn iter_segment_chunks(data: &[u8], sections: &[Section]) -> Vec<(usize, usize, 
         None => return Vec::new(),
     };
 
-    let tbl_data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
-    if data.len() < tbl_data_start + TABLE_HEADER_SIZE {
+    let tbl_data_start = (table.offset as usize).saturating_add(SECTION_DESCRIPTOR_SIZE);
+    if data.len() < tbl_data_start.saturating_add(TABLE_HEADER_SIZE) {
         return Vec::new();
     }
     let tbl = &data[tbl_data_start..];
@@ -1487,14 +1487,14 @@ fn iter_segment_chunks(data: &[u8], sections: &[Section]) -> Vec<(usize, usize, 
     };
     let entry_count = header.entry_count as usize;
     let base_offset = header.base_offset as usize;
-    let entries_start = tbl_data_start + TABLE_HEADER_SIZE;
-    let sectors_body_end = (sectors.offset + sectors.size) as usize;
+    let entries_start = tbl_data_start.saturating_add(TABLE_HEADER_SIZE);
+    let sectors_body_end = sectors.offset.saturating_add(sectors.size) as usize;
 
     // Decode one table entry's (compressed, relative-offset) via the shared
     // bit-split, yielding None when the 4 bytes are out of range.
     let entry_at = |idx: usize| -> Option<(bool, usize)> {
-        let off = entries_start + idx * 4;
-        let bytes = data.get(off..off + 4)?;
+        let off = entries_start.saturating_add(idx.saturating_mul(4));
+        let bytes = data.get(off..off.saturating_add(4))?;
         let e = sections::TableEntry::parse(bytes).ok()?;
         Some((e.compressed, e.chunk_offset as usize))
     };
@@ -1504,13 +1504,13 @@ fn iter_segment_chunks(data: &[u8], sections: &[Section]) -> Vec<(usize, usize, 
         let Some((compressed, rel)) = entry_at(i) else {
             break;
         };
-        let start = base_offset + rel;
+        let start = base_offset.saturating_add(rel);
 
-        let end = if i + 1 < entry_count {
-            let Some((_, next_rel)) = entry_at(i + 1) else {
+        let end = if i.saturating_add(1) < entry_count {
+            let Some((_, next_rel)) = entry_at(i.saturating_add(1)) else {
                 break;
             };
-            base_offset + next_rel
+            base_offset.saturating_add(next_rel)
         } else {
             sectors_body_end.min(data.len())
         };
@@ -1534,7 +1534,8 @@ fn check_hash_all_segments(
     issues: &mut Vec<EwfIntegrityAnomaly>,
     progress: &mut dyn FnMut(AnalysisProgress),
 ) {
-    let chunk_size = u64::from(geom.sectors_per_chunk) * u64::from(geom.bytes_per_sector);
+    let chunk_size =
+        u64::from(geom.sectors_per_chunk).saturating_mul(u64::from(geom.bytes_per_sector));
     let total_bytes = geom
         .sector_count
         .saturating_mul(u64::from(geom.bytes_per_sector));
@@ -1565,10 +1566,10 @@ fn check_hash_all_segments(
             // appended by the acquisition tool. Presence is detected by
             // raw.len() > chunk_size (the chunk byte range includes extra bytes).
             let this_chunk_idx = global_chunk_idx;
-            global_chunk_idx += 1;
+            global_chunk_idx = global_chunk_idx.saturating_add(1);
 
             let has_uncompressed_checksum = !compressed && (raw.len() > chunk_size_usize);
-            if has_uncompressed_checksum && raw.len() >= chunk_size_usize + 4 {
+            if has_uncompressed_checksum && raw.len() >= chunk_size_usize.saturating_add(4) {
                 let crc_end = chunk_size_usize;
                 let stored = le_u32(raw, crc_end);
                 let computed = adler32(&raw[..crc_end]);
@@ -1611,7 +1612,7 @@ fn check_hash_all_segments(
             progress(AnalysisProgress {
                 chunks_done: global_chunk_idx,
                 chunks_total: None,
-                bytes_done: total_bytes - bytes_remaining,
+                bytes_done: total_bytes.saturating_sub(bytes_remaining),
             });
         }
     }
@@ -1632,8 +1633,8 @@ fn check_hash_all_segments(
     // Stored MD5 from the EWF hash section
     match last_sections.iter().find(|s| s.type_name == "hash") {
         Some(hash_sec) => {
-            let body_start = (hash_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
-            if let Some(stored_slice) = last_data.get(body_start..body_start + 16) {
+            let body_start = (hash_sec.offset as usize).saturating_add(SECTION_DESCRIPTOR_SIZE);
+            if let Some(stored_slice) = last_data.get(body_start..body_start.saturating_add(16)) {
                 let stored: [u8; 16] = stored_slice.try_into().unwrap_or([0u8; 16]);
                 if computed_md5 != stored {
                     issues.push(EwfIntegrityAnomaly::HashMismatch {
@@ -1648,8 +1649,10 @@ fn check_hash_all_segments(
 
     // Stored SHA-1 from the EWF digest section (layout: 16-byte MD5, then 20-byte SHA-1)
     if let Some(digest_sec) = last_sections.iter().find(|s| s.type_name == "digest") {
-        let body_start = (digest_sec.offset as usize) + SECTION_DESCRIPTOR_SIZE;
-        if let Some(sha1_slice) = last_data.get(body_start + 16..body_start + 36) {
+        let body_start = (digest_sec.offset as usize).saturating_add(SECTION_DESCRIPTOR_SIZE);
+        if let Some(sha1_slice) =
+            last_data.get(body_start.saturating_add(16)..body_start.saturating_add(36))
+        {
             let stored: [u8; 20] = sha1_slice.try_into().unwrap_or([0u8; 20]);
             // All-zero stored SHA-1 means "not set" — skip comparison
             if stored != [0u8; 20] && computed_sha1 != stored {
