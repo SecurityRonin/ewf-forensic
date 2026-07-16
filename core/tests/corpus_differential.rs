@@ -25,17 +25,16 @@ fn ewf_matches_ewfexport(e01_name: &str) {
     let raw_path = tmp.path().join("reference.raw");
 
     let ok = std::process::Command::new(EWFEXPORT)
-        .args([
-            "-f", "raw",
-            "-u",
-            "-t", raw_stem.to_str().unwrap(),
-            &e01,
-        ])
+        .args(["-f", "raw", "-u", "-t", raw_stem.to_str().unwrap(), &e01])
         .status()
         .expect("spawn ewfexport")
         .success();
     assert!(ok, "ewfexport failed for {e01_name}");
-    assert!(raw_path.exists(), "ewfexport did not produce {}", raw_path.display());
+    assert!(
+        raw_path.exists(),
+        "ewfexport did not produce {}",
+        raw_path.display()
+    );
 
     let ref_data = std::fs::read(&raw_path).expect("read reference raw");
     let mut reader = EwfReader::open(&e01).expect("open EwfReader");
@@ -66,7 +65,9 @@ fn ewf_matches_ewfexport(e01_name: &str) {
     if ewf_size >= 512 {
         let end = ewf_size - 512;
         let mut buf = vec![0u8; 512];
-        reader.seek(SeekFrom::Start(end as u64)).expect("seek near-end");
+        reader
+            .seek(SeekFrom::Start(end as u64))
+            .expect("seek near-end");
         reader.read_exact(&mut buf).expect("read near-end");
         assert_eq!(
             buf,
