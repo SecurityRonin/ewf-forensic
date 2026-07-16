@@ -105,7 +105,7 @@ jobs:
         working-directory: forensic
         run: |
           cargo +nightly fuzz run fuzz_integrity -- -max_total_time=30
-          cargo +nightly fuzz run fuzz_repair -- -max_total_time=30
+          cargo +nightly fuzz run fuzz_multisegment -- -max_total_time=30
       - name: Fuzz reader targets
         working-directory: core
         run: |

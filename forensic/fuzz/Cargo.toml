@@ -18,8 +18,8 @@ test = false
 doc = false
 
 [[bin]]
-name = "fuzz_repair"
-path = "fuzz_targets/fuzz_repair.rs"
+name = "fuzz_multisegment"
+path = "fuzz_targets/fuzz_multisegment.rs"
 test = false
 doc = false
 
