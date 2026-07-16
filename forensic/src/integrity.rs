@@ -1748,8 +1748,9 @@ fn verify_ewf2_sector_data(
     let chunk_count = le_u64(tbl, 8) as usize;
 
     // Chunk table Adler-32: covers entries[0..chunk_count] immediately after the header.
-    let checksum_off = EVF2_CHUNK_TABLE_HEADER_SIZE + chunk_count * EVF2_CHUNK_TABLE_ENTRY_SIZE;
-    if checksum_off + 4 <= tbl.len() {
+    let checksum_off = EVF2_CHUNK_TABLE_HEADER_SIZE
+        .saturating_add(chunk_count.saturating_mul(EVF2_CHUNK_TABLE_ENTRY_SIZE));
+    if checksum_off.saturating_add(4) <= tbl.len() {
         let computed_cs = adler32(&tbl[EVF2_CHUNK_TABLE_HEADER_SIZE..checksum_off]);
         let stored_cs = le_u32(tbl, checksum_off);
         if computed_cs != stored_cs {
@@ -1765,24 +1766,26 @@ fn verify_ewf2_sector_data(
     let mut sha256_h = Sha256::new();
 
     for i in 0..chunk_count {
-        let entry_off = EVF2_CHUNK_TABLE_HEADER_SIZE + i * EVF2_CHUNK_TABLE_ENTRY_SIZE;
-        if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() {
+        let entry_off = EVF2_CHUNK_TABLE_HEADER_SIZE
+            .saturating_add(i.saturating_mul(EVF2_CHUNK_TABLE_ENTRY_SIZE));
+        if entry_off.saturating_add(EVF2_CHUNK_TABLE_ENTRY_SIZE) > tbl.len() {
             break;
         }
         let file_offset = le_u64(tbl, entry_off) as usize;
-        let chunk_data_size = le_u32(tbl, entry_off + 8) as usize;
-        let flags = le_u32(tbl, entry_off + 12);
+        let chunk_data_size = le_u32(tbl, entry_off.saturating_add(8)) as usize;
+        let flags = le_u32(tbl, entry_off.saturating_add(12));
 
         // data_size includes a 4-byte Adler-32 trailer; raw sector data precedes it.
         let raw_size = chunk_data_size.saturating_sub(4);
-        let chunk_raw = match data.get(file_offset..file_offset + raw_size) {
+        let chunk_raw = match data.get(file_offset..file_offset.saturating_add(raw_size)) {
             Some(r) => r,
             None => break,
         };
 
         // Per-chunk Adler-32
         if chunk_data_size >= 4 {
-            if let Some(crc_bytes) = data.get(file_offset + raw_size..file_offset + raw_size + 4) {
+            let crc_start = file_offset.saturating_add(raw_size);
+            if let Some(crc_bytes) = data.get(crc_start..crc_start.saturating_add(4)) {
                 let stored_crc = u32::from_le_bytes(crc_bytes.try_into().unwrap_or([0u8; 4]));
                 let computed_crc = adler32(chunk_raw);
                 if computed_crc != stored_crc {
@@ -1814,9 +1817,9 @@ fn verify_ewf2_sector_data(
             sha256_h.update(chunk_raw);
         }
         progress(AnalysisProgress {
-            chunks_done: i + 1,
+            chunks_done: i.saturating_add(1),
             chunks_total: Some(chunk_count),
-            bytes_done: ((i + 1) * raw_size) as u64,
+            bytes_done: i.saturating_add(1).saturating_mul(raw_size) as u64,
         });
     }
 
@@ -1875,12 +1878,12 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
         let mut chunk_table_body: Option<(usize, usize)> = None;
 
         loop {
-            if desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE > data.len()
+            if desc_offset.saturating_add(EVF2_SECTION_DESCRIPTOR_SIZE) > data.len()
                 || desc_offset < EVF2_FILE_HEADER_SIZE
             {
                 break;
             }
-            let desc = &data[desc_offset..desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE];
+            let desc = &data[desc_offset..desc_offset.saturating_add(EVF2_SECTION_DESCRIPTOR_SIZE)];
             let section_type = le_u32(desc, 0);
             let data_flags = le_u32(desc, 4);
             let prev_offset = le_u64(desc, 8) as usize;
@@ -1912,15 +1915,16 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
         let chunk_count = le_u64(tbl, 8) as usize;
 
         for i in 0..chunk_count {
-            let entry_off = EVF2_CHUNK_TABLE_HEADER_SIZE + i * EVF2_CHUNK_TABLE_ENTRY_SIZE;
-            if entry_off + EVF2_CHUNK_TABLE_ENTRY_SIZE > tbl.len() {
+            let entry_off = EVF2_CHUNK_TABLE_HEADER_SIZE
+                .saturating_add(i.saturating_mul(EVF2_CHUNK_TABLE_ENTRY_SIZE));
+            if entry_off.saturating_add(EVF2_CHUNK_TABLE_ENTRY_SIZE) > tbl.len() {
                 break;
             }
             let file_offset = le_u64(tbl, entry_off) as usize;
-            let chunk_data_size = le_u32(tbl, entry_off + 8) as usize;
-            let flags = le_u32(tbl, entry_off + 12);
+            let chunk_data_size = le_u32(tbl, entry_off.saturating_add(8)) as usize;
+            let flags = le_u32(tbl, entry_off.saturating_add(12));
             let raw_size = chunk_data_size.saturating_sub(4);
-            let chunk_raw = match data.get(file_offset..file_offset + raw_size) {
+            let chunk_raw = match data.get(file_offset..file_offset.saturating_add(raw_size)) {
                 Some(r) => r,
                 None => break,
             };
@@ -1974,7 +1978,8 @@ fn compute_hashes_ewf1(segments: &[&[u8]]) -> Option<ComputedHashes> {
         .find(|s| s.type_name == "volume" || s.type_name == "disk")?;
     let geom = check_volume_v1(first, vol_sec.offset, vol_sec.size, &mut dummy)?;
 
-    let chunk_size = u64::from(geom.sectors_per_chunk) * u64::from(geom.bytes_per_sector);
+    let chunk_size =
+        u64::from(geom.sectors_per_chunk).saturating_mul(u64::from(geom.bytes_per_sector));
     let total_bytes = geom
         .sector_count
         .saturating_mul(u64::from(geom.bytes_per_sector));
