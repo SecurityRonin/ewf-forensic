@@ -398,7 +398,7 @@ fn hex(bytes: &[u8]) -> String {
 
 fn le_u16(data: &[u8], off: usize) -> u16 {
     let mut b = [0u8; 2];
-    if let Some(s) = data.get(off..off + 2) {
+    if let Some(s) = data.get(off..off.saturating_add(2)) {
         b.copy_from_slice(s);
     }
     u16::from_le_bytes(b)
@@ -406,7 +406,7 @@ fn le_u16(data: &[u8], off: usize) -> u16 {
 
 fn le_u32(data: &[u8], off: usize) -> u32 {
     let mut b = [0u8; 4];
-    if let Some(s) = data.get(off..off + 4) {
+    if let Some(s) = data.get(off..off.saturating_add(4)) {
         b.copy_from_slice(s);
     }
     u32::from_le_bytes(b)
@@ -414,7 +414,7 @@ fn le_u32(data: &[u8], off: usize) -> u32 {
 
 fn le_u64(data: &[u8], off: usize) -> u64 {
     let mut b = [0u8; 8];
-    if let Some(s) = data.get(off..off + 8) {
+    if let Some(s) = data.get(off..off.saturating_add(8)) {
         b.copy_from_slice(s);
     }
     u64::from_le_bytes(b)
@@ -424,7 +424,7 @@ fn le_u64(data: &[u8], off: usize) -> u64 {
 /// yields all zeroes rather than panicking.
 fn array_at<const N: usize>(data: &[u8], off: usize) -> [u8; N] {
     let mut b = [0u8; N];
-    if let Some(s) = data.get(off..off + N) {
+    if let Some(s) = data.get(off..off.saturating_add(N)) {
         b.copy_from_slice(s);
     }
     b
@@ -580,8 +580,8 @@ impl<'a> EwfIntegrity<'a> {
         let mut total_table_entries: u32 = 0;
 
         for (idx, &data) in self.segments.iter().enumerate() {
-            let expected_seg_num = (idx + 1) as u16;
-            let is_last = idx == n - 1;
+            let expected_seg_num = idx.saturating_add(1) as u16;
+            let is_last = idx == n.saturating_sub(1);
             let file_size = data.len() as u64;
 
             if data.len() < FILE_HEADER_SIZE {
@@ -628,7 +628,7 @@ impl<'a> EwfIntegrity<'a> {
                         let neither_zero = base_guid != [0u8; 16] && later_guid != [0u8; 16];
                         if neither_zero && base_guid != later_guid {
                             issues.push(EwfIntegrityAnomaly::SetIdentifierMismatch {
-                                segment: idx + 1,
+                                segment: idx.saturating_add(1),
                             });
                         }
                     }
@@ -645,14 +645,18 @@ impl<'a> EwfIntegrity<'a> {
                 None
             };
             let sectors_section = sections.iter().find(|s| s.type_name == "sectors");
-            let sectors_range = sectors_section
-                .map(|s| (s.offset + SECTION_DESCRIPTOR_SIZE as u64, s.offset + s.size));
+            let sectors_range = sectors_section.map(|s| {
+                (
+                    s.offset.saturating_add(SECTION_DESCRIPTOR_SIZE as u64),
+                    s.offset.saturating_add(s.size),
+                )
+            });
             if sectors_section.is_none() {
                 issues.push(EwfIntegrityAnomaly::SectorsSectionMissing);
             }
             if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
-                let data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
-                if data.len() >= data_start + 4 {
+                let data_start = (table.offset as usize).saturating_add(SECTION_DESCRIPTOR_SIZE);
+                if data.len() >= data_start.saturating_add(4) {
                     let count = le_u32(data, data_start);
                     total_table_entries = total_table_entries.saturating_add(count);
                 }
@@ -673,10 +677,10 @@ impl<'a> EwfIntegrity<'a> {
                 sections.iter().find(|s| s.type_name == "table"),
                 sections.iter().find(|s| s.type_name == "table2"),
             ) {
-                let b1_start = (t1.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
-                let b1_end = (t1.offset + t1.size) as usize;
-                let b2_start = (t2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
-                let b2_end = (t2.offset + t2.size) as usize;
+                let b1_start = t1.offset.saturating_add(SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                let b1_end = t1.offset.saturating_add(t1.size) as usize;
+                let b2_start = t2.offset.saturating_add(SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                let b2_end = t2.offset.saturating_add(t2.size) as usize;
                 if let (Some(body1), Some(body2)) =
                     (data.get(b1_start..b1_end), data.get(b2_start..b2_end))
                 {
@@ -692,8 +696,8 @@ impl<'a> EwfIntegrity<'a> {
 
             // error2 section: parse entry_count, warn if any unreadable sectors.
             if let Some(e2) = sections.iter().find(|s| s.type_name == "error2") {
-                let body_start = (e2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
-                if body_start + 4 <= data.len() {
+                let body_start = e2.offset.saturating_add(SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                if body_start.saturating_add(4) <= data.len() {
                     let count = le_u32(data, body_start);
                     if count > 0 {
                         issues.push(EwfIntegrityAnomaly::BadSectorsPresent { count });
@@ -757,7 +761,7 @@ impl<'a> EwfIntegrity<'a> {
         let mut final_stored_sha256: Option<[u8; 32]> = None;
 
         for (idx, &data) in self.segments.iter().enumerate() {
-            let expected_seg_num = (idx + 1) as u32;
+            let expected_seg_num = idx.saturating_add(1) as u32;
 
             if data.len() < EVF2_FILE_HEADER_SIZE + EVF2_SECTION_DESCRIPTOR_SIZE {
                 issues.push(EwfIntegrityAnomaly::SectionChainBroken {
@@ -801,12 +805,13 @@ impl<'a> EwfIntegrity<'a> {
             let mut desc_offset = data.len().saturating_sub(EVF2_SECTION_DESCRIPTOR_SIZE);
 
             loop {
-                if desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE > data.len()
+                if desc_offset.saturating_add(EVF2_SECTION_DESCRIPTOR_SIZE) > data.len()
                     || desc_offset < EVF2_FILE_HEADER_SIZE
                 {
                     break;
                 }
-                let desc = &data[desc_offset..desc_offset + EVF2_SECTION_DESCRIPTOR_SIZE];
+                let desc =
+                    &data[desc_offset..desc_offset.saturating_add(EVF2_SECTION_DESCRIPTOR_SIZE)];
                 let section_type = le_u32(desc, 0);
                 let data_flags = le_u32(desc, 4);
                 let prev_offset = le_u64(desc, 8) as usize;
@@ -891,7 +896,7 @@ impl<'a> EwfIntegrity<'a> {
                 desc_offset = prev_offset;
             }
 
-            if idx == n - 1 && !has_hash {
+            if idx == n.saturating_sub(1) && !has_hash {
                 issues.push(EwfIntegrityAnomaly::Ewf2HashSectionMissing);
             }
             if idx == 0 && !has_media_info {
@@ -899,7 +904,7 @@ impl<'a> EwfIntegrity<'a> {
             }
 
             // Capture stored hashes from the final segment; they cover ALL segments' data.
-            if idx == n - 1 {
+            if idx == n.saturating_sub(1) {
                 final_stored_md5 = stored_sector_md5;
                 final_stored_sha1 = stored_sector_sha1;
                 final_stored_sha256 = stored_sector_sha256;
@@ -989,8 +994,8 @@ impl<'a> EwfIntegrity<'a> {
         let mut total_table_entries: u32 = 0;
 
         for (idx, &data) in self.segments.iter().enumerate() {
-            let expected_seg_num = (idx + 1) as u16;
-            let is_last = idx == n - 1;
+            let expected_seg_num = idx.saturating_add(1) as u16;
+            let is_last = idx == n.saturating_sub(1);
             let file_size = data.len() as u64;
 
             if data.len() < FILE_HEADER_SIZE {
@@ -1033,7 +1038,7 @@ impl<'a> EwfIntegrity<'a> {
                             && base_guid != later_guid
                         {
                             issues.push(EwfIntegrityAnomaly::SetIdentifierMismatch {
-                                segment: idx + 1,
+                                segment: idx.saturating_add(1),
                             });
                         }
                     }
@@ -1047,14 +1052,18 @@ impl<'a> EwfIntegrity<'a> {
                 None
             };
             let sectors_section = sections.iter().find(|s| s.type_name == "sectors");
-            let sectors_range = sectors_section
-                .map(|s| (s.offset + SECTION_DESCRIPTOR_SIZE as u64, s.offset + s.size));
+            let sectors_range = sectors_section.map(|s| {
+                (
+                    s.offset.saturating_add(SECTION_DESCRIPTOR_SIZE as u64),
+                    s.offset.saturating_add(s.size),
+                )
+            });
             if sectors_section.is_none() {
                 issues.push(EwfIntegrityAnomaly::SectorsSectionMissing);
             }
             if let Some(table) = sections.iter().find(|s| s.type_name == "table") {
-                let data_start = (table.offset as usize) + SECTION_DESCRIPTOR_SIZE;
-                if data.len() >= data_start + 4 {
+                let data_start = (table.offset as usize).saturating_add(SECTION_DESCRIPTOR_SIZE);
+                if data.len() >= data_start.saturating_add(4) {
                     let count = le_u32(data, data_start);
                     total_table_entries = total_table_entries.saturating_add(count);
                 }
@@ -1073,10 +1082,10 @@ impl<'a> EwfIntegrity<'a> {
                 sections.iter().find(|s| s.type_name == "table"),
                 sections.iter().find(|s| s.type_name == "table2"),
             ) {
-                let b1_start = (t1.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
-                let b1_end = (t1.offset + t1.size) as usize;
-                let b2_start = (t2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
-                let b2_end = (t2.offset + t2.size) as usize;
+                let b1_start = t1.offset.saturating_add(SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                let b1_end = t1.offset.saturating_add(t1.size) as usize;
+                let b2_start = t2.offset.saturating_add(SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                let b2_end = t2.offset.saturating_add(t2.size) as usize;
                 if let (Some(body1), Some(body2)) =
                     (data.get(b1_start..b1_end), data.get(b2_start..b2_end))
                 {
@@ -1090,8 +1099,8 @@ impl<'a> EwfIntegrity<'a> {
                 }
             }
             if let Some(e2) = sections.iter().find(|s| s.type_name == "error2") {
-                let body_start = (e2.offset + SECTION_DESCRIPTOR_SIZE as u64) as usize;
-                if body_start + 4 <= data.len() {
+                let body_start = e2.offset.saturating_add(SECTION_DESCRIPTOR_SIZE as u64) as usize;
+                if body_start.saturating_add(4) <= data.len() {
                     let count = le_u32(data, body_start);
                     if count > 0 {
                         issues.push(EwfIntegrityAnomaly::BadSectorsPresent { count });
