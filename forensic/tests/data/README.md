@@ -254,3 +254,23 @@ in `tool_fixtures_tests.rs` encode the format variations we know about:
 
 If a real fixture reveals a new quirk, add a synthetic builder variant and
 an always-on test before adding the ignored fixture test.
+
+## Recovery test fixtures (`recover_tests.rs` + `recover.rs` unit tests)
+
+The tolerant-recovery tests for `EwfRecover` mint every corrupt input **at test
+time** — nothing corrupt is committed. Classification: **SYNTHETIC** (derived
+from the committed clean fixture or built in-code). Generators:
+
+| Minted fixture | Base | Generator (verbatim) |
+|----------------|------|----------------------|
+| `truncated.E01` (in `/tmp`) | `ewfacquire_clean.E01` | `mint_truncated` in `recover_tests.rs`: read the clean E01, write back all but the trailing 256 KiB. Removes `table`/`table2`/`done` (they trail the 4 MiB `sectors` payload). |
+| `badchunk.E01` (in `/tmp`) | `ewfacquire_clean.E01` | `mint_bad_chunk` in `recover_tests.rs`: read the clean E01, `bytes[len/3] ^= 0xFF`. Flips one byte inside the uncompressed `sectors` payload. |
+| in-code compressed E01s | none | `build_compressed_e01` in `recover.rs` `#[cfg(test)]`: hand-assembles a 1-chunk EWF v1 with a zlib-compressed `sectors` chunk; optional `corrupt_stream` mangles the deflate body; optional `add_table2` mirrors the table. |
+| in-code uncompressed E01s | none | `build_uncompressed_table2_good` / `build_uncompressed_sized` in `recover.rs` `#[cfg(test)]`: hand-assembles a 1-chunk EWF v1 with configurable geometry, a `table` pointing out of range, and a `table2` pointing at the real chunk (with correct or corrupted trailing Adler-32). |
+
+**Tier-1 oracle:** libewf `ewfexport -q -u -f raw` is the error-tolerant reference
+(it zero-fills unreadable chunks and exports present-but-suspect sectors, exactly
+like `EwfRecover`). The `oracle_*` tests assert our recovered raw equals
+`ewfexport`'s byte-for-byte and skip cleanly when `ewfexport` is not on PATH.
+`ewfrecover` itself only rebuilds *structurally* broken EWFs (it declines a merely
+bad-CRC chunk with "not corrupted"), so `ewfexport` is the raw oracle.

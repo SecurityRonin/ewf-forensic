@@ -3,6 +3,7 @@
 mod error;
 mod integrity;
 mod integrity_path;
+mod recover;
 
 pub use error::EwfForensicError;
 pub use integrity::{
@@ -10,3 +11,4 @@ pub use integrity::{
     Severity,
 };
 pub use integrity_path::EwfIntegrityPath;
+pub use recover::{EwfRecover, RecoveryReport};

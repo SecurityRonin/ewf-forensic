@@ -126,8 +126,8 @@ impl EwfIntegrityPath {
     }
 
     /// Memory-map every segment once and run analysis + hash computation in a
-    /// single pass, avoiding duplicate I/O compared to calling [`analyse`] and
-    /// [`compute_hashes`] separately.
+    /// single pass, avoiding duplicate I/O compared to calling [`analyse`](Self::analyse) and
+    /// [`compute_hashes`](Self::compute_hashes) separately.
     ///
     /// Returns `Err` if any segment file cannot be opened or mapped.
     /// If the image is too corrupted to compute hashes, a zeroed
@@ -175,7 +175,7 @@ impl EwfIntegrityPath {
 
     /// Run integrity analysis while reporting progress to a callback.
     ///
-    /// Identical to [`analyse`] but invokes `progress` after each chunk is
+    /// Identical to [`analyse`](Self::analyse) but invokes `progress` after each chunk is
     /// processed so callers can display a progress bar for large images.
     ///
     /// Returns `(anomalies, ())` on success, or `Err` if a segment cannot be
