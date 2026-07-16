@@ -23,9 +23,16 @@ path = "fuzz_targets/fuzz_multisegment.rs"
 test = false
 doc = false
 
+[[bin]]
+name = "fuzz_recover"
+path = "fuzz_targets/fuzz_recover.rs"
+test = false
+doc = false
+
 [dependencies]
 libfuzzer-sys = "0.4"
 ewf-forensic = { path = ".." }
+tempfile = "3"
 
 [profile.release]
 debug = 1

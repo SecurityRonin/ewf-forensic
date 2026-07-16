@@ -21,7 +21,9 @@ jobs:
           - member: forensic
             target: fuzz_integrity
           - member: forensic
-            target: fuzz_repair
+            target: fuzz_multisegment
+          - member: forensic
+            target: fuzz_recover
           - member: core
             target: parse_header
           - member: core
