@@ -1,3 +1,9 @@
+// Attacker-controlled offsets, sizes, counts and geometry parsed from an
+// untrusted EWF image flow through this module. Deny raw integer arithmetic so
+// the compiler flags every site that could overflow-panic; each must use a
+// saturating/checked form (or a bounds guard) instead. Tests may overflow freely.
+#![cfg_attr(not(test), deny(clippy::arithmetic_side_effects))]
+
 use flate2::read::ZlibDecoder;
 use md5::{Digest as _, Md5};
 use sha1::Sha1;
