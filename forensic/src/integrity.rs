@@ -890,7 +890,12 @@ impl<'a> EwfIntegrity<'a> {
                     }
                 }
 
-                if prev_offset == 0 {
+                // The EWF v2 section chain walks strictly backward: each descriptor's
+                // `prev_offset` points to an earlier descriptor. Require strict
+                // progress toward the start; a value ≥ the current offset (e.g. a
+                // self-referential or ascending chain from a crafted image) would
+                // otherwise spin forever, pushing an anomaly each turn until OOM.
+                if prev_offset == 0 || prev_offset >= desc_offset {
                     break;
                 }
                 desc_offset = prev_offset;
@@ -1499,7 +1504,10 @@ fn iter_segment_chunks(data: &[u8], sections: &[Section]) -> Vec<(usize, usize, 
         Some((e.compressed, e.chunk_offset as usize))
     };
 
-    let mut chunks = Vec::with_capacity(entry_count);
+    // `entry_count` is an untrusted u32 from the table header; each entry needs
+    // ≥4 bytes of real input to materialise, so cap the pre-reservation against
+    // the available bytes to avoid an allocation bomb (a lying count → huge malloc).
+    let mut chunks = Vec::with_capacity(entry_count.min(data.len()));
     for i in 0..entry_count {
         let Some((compressed, rel)) = entry_at(i) else {
             break;
@@ -1584,7 +1592,11 @@ fn check_hash_all_segments(
 
             if compressed {
                 let limit = (to_hash as u64).saturating_add(1);
-                let mut decompressed = Vec::with_capacity(to_hash);
+                // Pre-reserve at most the source length: `to_hash` derives from
+                // untrusted geometry and can be huge; the Vec grows as needed and
+                // `.take(limit)` bounds the total, so capping the hint avoids an
+                // allocation bomb without changing behaviour.
+                let mut decompressed = Vec::with_capacity(to_hash.min(raw.len()));
                 if ZlibDecoder::new(raw)
                     .take(limit)
                     .read_to_end(&mut decompressed)
@@ -1799,8 +1811,9 @@ fn verify_ewf2_sector_data(
         }
 
         if flags & EVF2_CHUNK_FLAG_COMPRESSED != 0 {
-            // Zlib-compressed chunk: decompress before hashing.
-            let mut decompressed = Vec::with_capacity(raw_size);
+            // Zlib-compressed chunk: decompress before hashing. Cap the pre-reserve
+            // against the source length (`raw_size` is an untrusted u32 field).
+            let mut decompressed = Vec::with_capacity(raw_size.min(chunk_raw.len()));
             if ZlibDecoder::new(chunk_raw)
                 .read_to_end(&mut decompressed)
                 .is_err()
@@ -1895,7 +1908,9 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
                 chunk_table_body = Some((body_start, body_end));
             }
 
-            if prev_offset == 0 {
+            // Require strict backward progress; a self-referential/ascending
+            // `prev_offset` from a crafted image would otherwise loop forever.
+            if prev_offset == 0 || prev_offset >= desc_offset {
                 break;
             }
             desc_offset = prev_offset;
@@ -1930,7 +1945,8 @@ fn compute_hashes_ewf2(segments: &[&[u8]]) -> Option<ComputedHashes> {
             };
 
             if flags & EVF2_CHUNK_FLAG_COMPRESSED != 0 {
-                let mut decompressed = Vec::with_capacity(raw_size);
+                // Cap the pre-reserve against the source length (untrusted `raw_size`).
+                let mut decompressed = Vec::with_capacity(raw_size.min(chunk_raw.len()));
                 if ZlibDecoder::new(chunk_raw)
                     .read_to_end(&mut decompressed)
                     .is_err()
@@ -2005,7 +2021,9 @@ fn compute_hashes_ewf1(segments: &[&[u8]]) -> Option<ComputedHashes> {
 
             if compressed {
                 let limit = (to_hash as u64).saturating_add(1);
-                let mut decompressed = Vec::with_capacity(to_hash);
+                // Cap the pre-reservation against the source length; `to_hash`
+                // derives from untrusted geometry (allocation-bomb otherwise).
+                let mut decompressed = Vec::with_capacity(to_hash.min(raw.len()));
                 if ZlibDecoder::new(raw)
                     .take(limit)
                     .read_to_end(&mut decompressed)
