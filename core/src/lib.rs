@@ -2989,3 +2989,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(feature = "vfs")]
+mod vfs;

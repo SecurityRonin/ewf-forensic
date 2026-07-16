@@ -52,7 +52,10 @@ fn bogus_e02_open_returns_err() {
 fn ctf_file6_opens_and_has_nonzero_size() {
     let path = format!("{DATA_DIR}/ctf_file6.E01");
     let reader = ewf::EwfReader::open(&path).expect("ctf_file6.E01 must open");
-    assert!(reader.total_size() > 0, "ctf_file6.E01 total_size must be > 0");
+    assert!(
+        reader.total_size() > 0,
+        "ctf_file6.E01 total_size must be > 0"
+    );
 }
 
 #[test]
@@ -61,7 +64,9 @@ fn ctf_file6_read_is_stable() {
     let mut reader = ewf::EwfReader::open(&path).expect("open");
     let mut buf = [0u8; 512];
     reader.seek(SeekFrom::Start(0)).unwrap();
-    reader.read_exact(&mut buf).expect("read sector 0 of ctf_file6.E01");
+    reader
+        .read_exact(&mut buf)
+        .expect("read sector 0 of ctf_file6.E01");
     let mut buf2 = [0u8; 512];
     reader.seek(SeekFrom::Start(0)).unwrap();
     reader.read_exact(&mut buf2).unwrap();
@@ -88,8 +93,7 @@ fn ewfacquire_clean_sector0_is_zeros() {
     let mut buf = [0xFFu8; 512];
     reader.read_exact(&mut buf).expect("read sector 0");
     assert_eq!(
-        buf,
-        [0u8; 512],
+        buf, [0u8; 512],
         "ewfacquire_clean sourced from /dev/zero — sector 0 must be all zeros"
     );
 }
@@ -99,8 +103,7 @@ fn ewfacquire_clean_sector0_is_zeros() {
 #[test]
 fn gpt_130_partitions_opens_and_has_nonzero_size() {
     let path = format!("{DATA_DIR}/gpt_130_partitions.E01");
-    let reader =
-        ewf::EwfReader::open(&path).expect("gpt_130_partitions.E01 must open");
+    let reader = ewf::EwfReader::open(&path).expect("gpt_130_partitions.E01 must open");
     assert!(
         reader.total_size() > 0,
         "gpt_130_partitions: total_size must be > 0"
@@ -112,7 +115,9 @@ fn gpt_130_partitions_mbr_signature() {
     let path = format!("{DATA_DIR}/gpt_130_partitions.E01");
     let mut reader = ewf::EwfReader::open(&path).expect("open");
     let mut mbr = [0u8; 512];
-    reader.read_exact(&mut mbr).expect("read sector 0 (MBR/GPT protective MBR)");
+    reader
+        .read_exact(&mut mbr)
+        .expect("read sector 0 (MBR/GPT protective MBR)");
     // GPT uses a protective MBR with boot signature 0x55 0xAA.
     assert_eq!(mbr[510], 0x55, "GPT protective MBR byte 510 must be 0x55");
     assert_eq!(mbr[511], 0xAA, "GPT protective MBR byte 511 must be 0xAA");
@@ -177,8 +182,7 @@ fn zeros_128s_ex01_all_zeros() {
     let mut buf = [0xFFu8; 512];
     reader.read_exact(&mut buf).expect("read sector 0");
     assert_eq!(
-        buf,
-        [0u8; 512],
+        buf, [0u8; 512],
         "zeros_128s.Ex01 sourced from /dev/zero — all bytes must be zero"
     );
 }
@@ -188,8 +192,7 @@ fn zeros_128s_ex01_all_zeros() {
 #[test]
 fn zeros_128s_compressed_ex01_media_size() {
     let path = format!("{DATA_DIR}/zeros_128s_compressed.Ex01");
-    let reader =
-        ewf::EwfReader::open(&path).expect("zeros_128s_compressed.Ex01 must open");
+    let reader = ewf::EwfReader::open(&path).expect("zeros_128s_compressed.Ex01 must open");
     assert_eq!(
         reader.total_size(),
         65_536,
@@ -202,10 +205,11 @@ fn zeros_128s_compressed_ex01_all_zeros() {
     let path = format!("{DATA_DIR}/zeros_128s_compressed.Ex01");
     let mut reader = ewf::EwfReader::open(&path).expect("open");
     let mut buf = [0xFFu8; 512];
-    reader.read_exact(&mut buf).expect("read sector 0 from compressed EWF v2");
+    reader
+        .read_exact(&mut buf)
+        .expect("read sector 0 from compressed EWF v2");
     assert_eq!(
-        buf,
-        [0u8; 512],
+        buf, [0u8; 512],
         "zeros_128s_compressed sourced from /dev/zero — all bytes must be zero"
     );
 }
