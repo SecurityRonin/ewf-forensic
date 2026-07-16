@@ -1,6 +1,6 @@
 [package]
 name = "ewf"
-version = "0.4.1"
+version = "0.4.2"
 edition.workspace = true
 rust-version.workspace = true
 description = "Pure Rust reader for Expert Witness Format (E01/EWF) forensic disk images"
@@ -35,11 +35,6 @@ sha-1 = { workspace = true, optional = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 md-5 = { workspace = true }
-# End-to-end VFS composition proof (Step 4): container -> ImageSource ->
-# SourceCursor -> NtfsFs -> FileSystem. Path deps to the local vfs branches;
-# this integration test is local-only (not run in published CI).
-ntfs-core = { path = "../../ntfs-forensic/core", features = ["vfs"] }
-forensic-vfs = "0.2"
 
 [lints]
 workspace = true
