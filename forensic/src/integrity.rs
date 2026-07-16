@@ -1520,7 +1520,9 @@ fn check_hash_all_segments(
     progress: &mut dyn FnMut(AnalysisProgress),
 ) {
     let chunk_size = u64::from(geom.sectors_per_chunk) * u64::from(geom.bytes_per_sector);
-    let total_bytes = geom.sector_count * u64::from(geom.bytes_per_sector);
+    let total_bytes = geom
+        .sector_count
+        .saturating_mul(u64::from(geom.bytes_per_sector));
     let mut bytes_remaining = total_bytes;
 
     let mut md5_h = Md5::new();
@@ -1955,7 +1957,9 @@ fn compute_hashes_ewf1(segments: &[&[u8]]) -> Option<ComputedHashes> {
     let geom = check_volume_v1(first, vol_sec.offset, vol_sec.size, &mut dummy)?;
 
     let chunk_size = u64::from(geom.sectors_per_chunk) * u64::from(geom.bytes_per_sector);
-    let total_bytes = geom.sector_count * u64::from(geom.bytes_per_sector);
+    let total_bytes = geom
+        .sector_count
+        .saturating_mul(u64::from(geom.bytes_per_sector));
     let mut bytes_remaining = total_bytes;
 
     let mut md5_h = Md5::new();
