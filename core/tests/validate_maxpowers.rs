@@ -1,13 +1,31 @@
 use std::io::{Read, Seek, SeekFrom};
 
+/// Resolve an E01 in the shared corpus dir named by `$EWF_TEST_CORPUS`.
+///
+/// The large third-party E01 corpora (MaxPowers, PC-MUS-001, Szechuan Sauce) are
+/// gitignored and downloaded on demand; point `EWF_TEST_CORPUS` at the directory
+/// that holds them. Returns `None` (with a skip note) when the env var is unset
+/// or the file is absent, so the test skips cleanly instead of failing.
+fn corpus_e01(name: &str) -> Option<std::path::PathBuf> {
+    let Some(dir) = std::env::var_os("EWF_TEST_CORPUS") else {
+        eprintln!("skipping {name}: EWF_TEST_CORPUS unset");
+        return None;
+    };
+    let path = std::path::Path::new(&dir).join(name);
+    if !path.exists() {
+        eprintln!("skipping {name}: {} not found", path.display());
+        return None;
+    }
+    Some(path)
+}
+
 #[test]
 fn validate_maxpowers() {
-    let path = "../usnjrnl-forensic/tests/data/MaxPowersCDrive.E01";
-    if !std::path::Path::new(path).exists() {
+    let Some(path) = corpus_e01("MaxPowersCDrive.E01") else {
         return;
-    }
+    };
 
-    let mut reader = ewf::EwfReader::open(path).unwrap();
+    let mut reader = ewf::EwfReader::open(&path).unwrap();
 
     assert_eq!(
         reader.total_size(),
@@ -48,12 +66,11 @@ fn validate_maxpowers() {
 fn maxpowers_full_media_md5() {
     use md5::{Digest, Md5};
 
-    let path = "../usnjrnl-forensic/tests/data/MaxPowersCDrive.E01";
-    if !std::path::Path::new(path).exists() {
+    let Some(path) = corpus_e01("MaxPowersCDrive.E01") else {
         return;
-    }
+    };
 
-    let mut reader = ewf::EwfReader::open(path).unwrap();
+    let mut reader = ewf::EwfReader::open(&path).unwrap();
     reader.seek(SeekFrom::Start(0)).unwrap();
 
     let mut hasher = Md5::new();

@@ -859,15 +859,24 @@ mod tests {
         assert_eq!(reader.chunk_count(), 1);
     }
 
-    /// Smoke test against real E01 image (requires test-data/).
+    /// Smoke test against a real E01 image from the shared corpus dir named by
+    /// `$EWF_TEST_CORPUS` (gitignored, downloaded on demand). Skips cleanly when
+    /// the env var is unset or the file is absent.
     #[test]
-    #[ignore = "requires local test data not in CI"]
     fn ewf_reader_opens_real_e01() {
-        let path = std::path::Path::new(
-            "../usnjrnl-forensic/tests/data/20200918_0417_DESKTOP-SDN1RPT.E01",
-        );
-        assert!(path.exists(), "Test image not found at {}", path.display());
-        let mut reader = EwfReader::open(path).unwrap();
+        let Some(dir) = std::env::var_os("EWF_TEST_CORPUS") else {
+            eprintln!("skipping ewf_reader_opens_real_e01: EWF_TEST_CORPUS unset");
+            return;
+        };
+        let path = std::path::Path::new(&dir).join("20200918_0417_DESKTOP-SDN1RPT.E01");
+        if !path.exists() {
+            eprintln!(
+                "skipping ewf_reader_opens_real_e01: {} not found",
+                path.display()
+            );
+            return;
+        }
+        let mut reader = EwfReader::open(&path).unwrap();
         assert!(reader.total_size() > 0);
         eprintln!(
             "Image size: {} bytes ({:.2} GB)",
