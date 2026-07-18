@@ -1,0 +1,55 @@
+# release-plz owns crates.io publishing + changelogs + per-crate version bumps for
+# the workspace LIBRARIES — the reader `ewf` and the analyzer `ewf-forensic`. It
+# runs on pushes to main (see .github/workflows/release-plz.yml):
+#   - `release-pr`  opens a human-reviewed version-bump PR (conventional commits)
+#   - `release`     publishes any crate whose Cargo.toml version is ahead of
+#                   crates.io, in dependency order, and creates its git tag
+#
+# Binary distribution (the `ewf` CLI: MSI/deb/Homebrew/winget assets AND the
+# `ewf-cli` crate publish) stays in release.yml, triggered by a manual `v[0-9]*`
+# tag — decoupled from library publishing. `ewf-cli` is therefore release=false
+# here: release-plz never bumps or publishes it.
+
+[workspace]
+# Per-package git tags, e.g. `ewf-v0.4.4`, `ewf-forensic-v0.7.1`. These deliberately
+# do NOT match release.yml's `v[0-9]*` trigger (a `<name>-v…` tag has a letter, not
+# a digit, after the first `v`), so a library release never kicks off a binary build.
+git_tag_enable = true
+# GitHub Releases (with downloadable assets) are owned by release.yml; library
+# crates get a git tag + CHANGELOG entry, not a separate GitHub Release.
+git_release_enable = false
+changelog_update = true
+# The reader (ewf) and the analyzer (ewf-forensic) version independently.
+dependencies_update = false
+# Only prepare a release when a real change exists since the last one. release-plz's
+# release detection is file-based, so a changelog-only "chore: release" commit
+# otherwise re-triggers a release (the churn loop). This allowlist makes
+# feat/fix/perf/refactor/doc/revert the only release triggers; chore/ci/test/style/
+# build (incl. release-plz's own release commits) never prepare a release.
+release_commits = "^(feat|fix|perf|refactor|doc|revert)"
+
+[changelog]
+commit_parsers = [
+    { message = "^chore\\(release\\):", skip = true },
+    { message = "^chore: release", skip = true },
+    { message = "^feat", group = "added" },
+    { message = "^fix", group = "fixed" },
+    { message = "^perf", group = "performance" },
+    { message = "^refactor", group = "other" },
+    { message = "^doc", group = "documentation" },
+    { message = "^revert", group = "other" },
+    { message = "^style", skip = true },
+    { message = "^test", skip = true },
+    { message = "^ci", skip = true },
+    { message = "^build", skip = true },
+    { message = "^chore", skip = true },
+    { message = "^.*", group = "other" },
+]
+
+# The CLI ships via the `v[0-9]*` tag pipeline (release.yml), NOT release-plz.
+# `release = false` keeps release-plz from bumping or publishing it; the crate is
+# still published (by release.yml's `crate` job), so `publish` stays true (the
+# default, mirrored by ewf-cli's Cargo.toml which sets no `publish = false`).
+[[package]]
+name = "ewf-cli"
+release = false

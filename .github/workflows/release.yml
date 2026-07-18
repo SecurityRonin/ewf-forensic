@@ -107,24 +107,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      # Publish all three workspace crates. `ewf` (the reader) first since
-      # `ewf-cli` depends on it; `ewf-forensic` is independent (it does not yet
-      # consume the reader). Each `cargo publish` is idempotent-failing on an
-      # already-published version, so a no-op version bump is a no-op release.
-      - name: Publish ewf crate (reader)
-        run: cargo publish -p ewf
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Wait for crates.io index
-        run: sleep 30
+      # The `v[0-9]*` tag ships ONLY the CLI crate. The two LIBRARY crates — `ewf`
+      # (reader) and `ewf-forensic` (analyzer) — are owned by release-plz (PR-based,
+      # on merge to main; see release-plz.yml / release-plz.toml), which bumps,
+      # changelogs, and publishes them in dependency order. Publishing them here too
+      # would double-publish and fight release-plz's version bookkeeping.
       - name: Publish ewf-cli crate
         run: cargo publish -p ewf-cli
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Wait for crates.io index
-        run: sleep 30
-      - name: Publish ewf-forensic crate (analyzer)
-        run: cargo publish -p ewf-forensic
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
