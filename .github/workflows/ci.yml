@@ -33,15 +33,24 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
-    name: Test
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
-      # Whole workspace: reader (core, incl. real-corpus e2e_dftt /
-      # corpus_differential / lazy_byte_identity / segment_source_identity),
+      # Whole workspace across Linux/macOS/Windows: reader (core, incl. real-corpus
+      # e2e_dftt / corpus_differential / lazy_byte_identity / segment_source_identity),
       # the CLI, and the forensic analyzer's integrity suite.
+      #
+      # NOT `--all-features`: the optional `vfs` feature pins `forensic-vfs = "0.4"`,
+      # which is not yet on crates.io (the in-flight 0.4 fleet cut — only 0.3.0 is
+      # published). Enabling it fails dependency resolution. Re-add `--all-features`
+      # once forensic-vfs 0.4 is published and the lockfile is refreshed.
       - run: cargo test --workspace
 
   msrv:
@@ -59,6 +68,50 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+
+  vet:
+    name: Cargo Vet (supply-chain)
+    runs-on: ubuntu-latest
+    # Complements `deny` (known-bad advisories/licenses) with the supply-chain-
+    # injection layer: every dependency version must be human-source-reviewed or
+    # covered by an imported aggregate audit set (Google/Mozilla/Bytecode-Alliance/
+    # Embark). Config in supply-chain/{config,audits,imports}.toml.
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-vet
+        uses: taiki-e/install-action@59012be0884e296ca2da49b530610e72c49039ad # v2.81.6
+        with:
+          tool: cargo-vet
+      - name: Fetch dependencies
+        run: cargo fetch
+      - name: Check supply chain
+        run: cargo vet --locked
+
+  coverage:
+    name: Coverage (workspace line floor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+      - uses: taiki-e/install-action@59012be0884e296ca2da49b530610e72c49039ad # v2.81.6
+        with:
+          tool: cargo-llvm-cov
+      # A line-coverage FLOOR, not a 100% per-line gate. The workspace ships binaries
+      # (ewf-cli, ewf-check), so `--workspace` is the right scope — but the CLI's MCP
+      # server (cli/src/mcp.rs) and the main()/handler render shells are exercised
+      # end-to-end, not by unit tests, and the reader is generic over `R` (llvm-cov's
+      # per-function metric double-counts monomorphizations). The floor is set at the
+      # currently-achieved level (~85.7% lines) as a regression backstop; ratchet it
+      # up as untested paths (e.g. the MCP handlers, forensic/src/error.rs) gain tests.
+      - name: Enforce workspace line-coverage floor
+        run: cargo llvm-cov --workspace --summary-only --fail-under-lines 85
+      - name: Show missing lines (advisory)
+        if: always()
+        run: cargo llvm-cov --workspace --summary-only --show-missing-lines || true
 
   secrets:
     name: Secret Scan (gitleaks)
