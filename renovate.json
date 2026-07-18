@@ -4,6 +4,8 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": { "enabled": true },
   "packageRules": [
     {
       "matchManagers": ["github-actions"],
