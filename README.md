@@ -3,12 +3,17 @@
   <p align="center">Forensic integrity analysis for EWF / E01 images</p>
 </p>
 
-[![Crates.io](https://img.shields.io/crates/v/ewf-forensic.svg)](https://crates.io/crates/ewf-forensic)
-[![docs.rs](https://img.shields.io/docsrs/ewf-forensic)](https://docs.rs/ewf-forensic)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![CI](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml)
+[![Crates.io (ewf)](https://img.shields.io/crates/v/ewf.svg?label=ewf)](https://crates.io/crates/ewf)
+[![Crates.io (ewf-forensic)](https://img.shields.io/crates/v/ewf-forensic.svg?label=ewf-forensic)](https://crates.io/crates/ewf-forensic)
+[![docs.rs](https://img.shields.io/docsrs/ewf-forensic?label=docs.rs)](https://docs.rs/ewf-forensic)
 [![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
+
+[![CI](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-85%25%20lines-yellowgreen.svg)](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml)
+[![unsafe: forbidden (core)](https://img.shields.io/badge/unsafe-forbidden%20%28core%29-success.svg)](core/Cargo.toml)
+[![Security audit](https://img.shields.io/badge/security-audit-brightgreen.svg)](https://github.com/SecurityRonin/ewf-forensic/actions/workflows/ci.yml)
 
 **Verify the image. Trust the evidence.**
 
