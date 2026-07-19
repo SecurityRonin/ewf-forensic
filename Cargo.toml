@@ -22,7 +22,7 @@ authors = ["Albert Hui <albert@securityronin.com>"]
 # lives here too, so a bump touches one line. The reader's deps are hoisted; the
 # analyzer (forensic) keeps its own deps inline (different version pins / oracle).
 [workspace.dependencies]
-ewf = { path = "core", version = "0.4.0" }
+ewf = { path = "core", version = "0.4.5" }
 flate2 = "1"
 # adler-32 over EWF section CRCs (the section-checksum format fact). Already in
 # the tree via flate2; declared directly so `ewf::sections` can compute it.

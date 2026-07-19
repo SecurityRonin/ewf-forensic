@@ -395,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "ewf"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "adler2",
  "flate2",
@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "ewf-forensic"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "blazehash-core",
  "ewf",
