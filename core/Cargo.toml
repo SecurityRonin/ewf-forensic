@@ -1,6 +1,6 @@
 [package]
 name = "ewf"
-version = "0.4.5"
+version = "0.4.6"
 edition.workspace = true
 rust-version.workspace = true
 description = "Pure Rust reader for Expert Witness Format (E01/EWF) forensic disk images"
@@ -26,7 +26,7 @@ adler2 = { workspace = true }
 lru = { workspace = true }
 rayon = { workspace = true }
 thiserror = { workspace = true }
-forensic-vfs = { version = "0.5", optional = true }
+forensic-vfs = { version = "0.7", optional = true }
 log = { workspace = true }
 glob = { workspace = true }
 md-5 = { workspace = true, optional = true }
