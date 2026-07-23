@@ -14,6 +14,7 @@
 # Per-package git tags, e.g. `ewf-v0.4.4`, `ewf-forensic-v0.7.1`. These deliberately
 # do NOT match release.yml's `v[0-9]*` trigger (a `<name>-v…` tag has a letter, not
 # a digit, after the first `v`), so a library release never kicks off a binary build.
+git_tag_name = "{{ package }}-v{{ version }}"
 git_tag_enable = true
 # GitHub Releases (with downloadable assets) are owned by release.yml; library
 # crates get a git tag + CHANGELOG entry, not a separate GitHub Release.
