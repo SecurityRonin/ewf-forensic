@@ -363,10 +363,10 @@ impl Chunk {
     const COMPRESSED_BIT: u64 = 1 << 63;
 
     pub(crate) fn new(segment_idx: usize, compressed: bool, offset: u64, size: u64) -> Self {
-        debug_assert!(
-            offset < Self::COMPRESSED_BIT,
-            "EWF file offset must fit 63 bits"
-        );
+        // A real EWF file offset always fits in 63 bits (the top bit is the
+        // compressed flag). A malformed/crafted offset is masked below rather
+        // than asserted — never panic on untrusted input; the resulting bounded
+        // offset is caught by downstream range checks.
         let flag = if compressed { Self::COMPRESSED_BIT } else { 0 };
         Self {
             offset_packed: (offset & !Self::COMPRESSED_BIT) | flag,
