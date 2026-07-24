@@ -229,9 +229,13 @@ impl EwfVolume {
     }
 
     /// Total image size in bytes (`bytes_per_sector` * `sector_count`).
+    ///
+    /// Saturates instead of overflowing: `sector_count` is an untrusted `u64`
+    /// from the image, so a malformed geometry could otherwise overflow the
+    /// multiplication and panic in a debug build.
     #[must_use]
     pub fn total_size(&self) -> u64 {
-        u64::from(self.bytes_per_sector) * self.sector_count
+        u64::from(self.bytes_per_sector).saturating_mul(self.sector_count)
     }
 
     /// Byte range of the body that the stored adler-32 covers: `[0..1048]`.
@@ -458,6 +462,17 @@ mod crc_tests {
 
         full[4] ^= 0xFF; // tamper chunk_count
         assert_eq!(vol.verify_crc(&full), Some(false));
+    }
+
+    #[test]
+    fn volume_total_size_saturates_on_overflow() {
+        // Malformed geometry from an untrusted image: bytes_per_sector * sector_count
+        // overflows u64. total_size() must saturate, never panic.
+        let mut buf = [0u8; 24];
+        buf[12..16].copy_from_slice(&u32::MAX.to_le_bytes()); // bytes_per_sector
+        buf[16..24].copy_from_slice(&u64::MAX.to_le_bytes()); // sector_count
+        let vol = EwfVolume::parse(&buf).unwrap();
+        assert_eq!(vol.total_size(), u64::MAX);
     }
 
     #[test]
