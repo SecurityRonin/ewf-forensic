@@ -311,7 +311,7 @@ ewf-check --hash-md5=2692f3177a389e58906b5c9080aa1add evidence.E01
 ## Design
 
 - **File-based API uses memory-mapped I/O** — `EwfIntegrityPath` mmaps each segment rather than reading it into a `Vec<u8>`. Large images (100 GB+) do not require 100 GB of RAM.
-- **`unsafe_code = "deny"` with bounded mmap allows** — the crate's only `unsafe` is the read-only `memmap2::Mmap::map` of immutable evidence files (three `#[allow(unsafe_code)]` sites in `src/integrity_path.rs`); every other `unsafe` is a hard error.
+- **`unsafe_code = "deny"` with bounded mmap allows** — the crate's only `unsafe` is the read-only `memmap2::Mmap::map` of immutable evidence files (five `#[allow(unsafe_code)]` sites — four in `src/integrity_path.rs`, one in `src/recover.rs`); every other `unsafe` is a hard error.
 - **No panics on adversarial input** — every parser path is bounded; cycle attacks and integer overflows are explicitly handled. Verified by libfuzzer (4.5 M iterations, zero crashes) and proptest (property-based, runs in `cargo test`).
 - **Validated against independent oracles on real corpora** — committed acquisition-tool and CTF/sleuthkit images are checked against `ewfverify` (libewf) and `blazehash` (independent hashing code path); the differential harness found no false positives or false negatives. See [docs/validation.md](docs/validation.md) for the oracle/corpus map and reproduction steps.
 - **MSRV 1.85** — no nightly, no unstable features.
