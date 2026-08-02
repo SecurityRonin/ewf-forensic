@@ -43,6 +43,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+      # libewf's ewfexport is the independent oracle for core/tests/corpus_differential.rs.
+      # Without it the differential resolves no binary and silently no-ops, so the
+      # reader is never cross-validated in CI. Linux only: the Debian `ewf-tools`
+      # package ships /usr/bin/ewfexport, and the differential skips cleanly on the
+      # macOS and Windows legs where no oracle is installed.
+      - name: Install ewfexport oracle
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y ewf-tools
       # Whole workspace across Linux/macOS/Windows: reader (core, incl. real-corpus
       # e2e_dftt / corpus_differential / lazy_byte_identity / segment_source_identity),
       # the CLI, and the forensic analyzer's integrity suite.
