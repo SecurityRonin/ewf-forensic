@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 /// Byte-level differential tests: EwfReader bytes must match `ewfexport -f raw -u` output.
 ///
 /// These tests skip automatically if libewf's `ewfexport` is not installed,

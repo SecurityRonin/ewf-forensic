@@ -5,6 +5,8 @@
 //!
 //! Hashes verified against ewfverify / libewf (independent oracle).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use md5::{Digest, Md5};
 use std::io::{Read, Seek, SeekFrom};
 

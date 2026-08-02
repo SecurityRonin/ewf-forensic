@@ -3,6 +3,8 @@
 //! Test fixtures in `tests/data/` are committed to the repo (~1.2 MB total).
 //! Raw media MD5 hashes verified against both libewf (ewfexport) and The Sleuth Kit (`img_cat`).
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use md5::{Digest, Md5};
 use std::io::{Read, Seek, SeekFrom};
 

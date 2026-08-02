@@ -6,6 +6,8 @@
 //! RED: tests fail (panics in debug mode or wrong error returned).
 //! GREEN: tests pass after overflow-safe arithmetic and validation are added.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::io::Write;
 use tempfile::NamedTempFile;
 
