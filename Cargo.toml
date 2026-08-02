@@ -27,7 +27,11 @@ flate2 = "1"
 # adler-32 over EWF section CRCs (the section-checksum format fact). Already in
 # the tree via flate2; declared directly so `ewf::sections` can compute it.
 adler2 = "2"
-lru = "0.12"
+# RUSTSEC-2026-0002 (IterMut invalidated the HashMap's shared pointer, violating
+# Stacked Borrows) is patched in >= 0.16.3. The requirement states a minor+patch
+# floor rather than a bare "0.18" so a resolver can never land on an affected
+# 0.16.0-0.16.2 within the same caret range.
+lru = "0.18.1"
 rayon = "1"
 thiserror = "2"
 log = "0.4"
