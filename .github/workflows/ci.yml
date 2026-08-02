@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   ci:
-    uses: SecurityRonin/fleet-config/.github/workflows/rust-ci.yml@29f8011615059de76d9ad1a41ade1c6f9b70162c
+    uses: SecurityRonin/fleet-ci/.github/workflows/rust-ci.yml@f49dff5ddb19b17f69926210abb70f78c14c29e2
     with:
       # MIGRATION DEBT, carried across as-is rather than quietly changed by this
       # PR. This repo enforces an aggregate 85% line floor, not the fleet's
