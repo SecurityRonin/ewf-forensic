@@ -36,6 +36,9 @@ rayon = "1"
 thiserror = "2"
 log = "0.4"
 glob = "0.3"
+# The fleet's bounded integer readers — every offset/length field parsed from an
+# untrusted image goes through these (ADR-0012), never a hand-rolled slice+unwrap.
+safe-read = "0.2"
 md-5 = "0.10"
 sha-1 = "0.10"
 clap = { version = "4", features = ["derive"] }
@@ -51,9 +54,14 @@ tempfile = "3"
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 correctness = { level = "deny", priority = -1 }
 suspicious = { level = "deny", priority = -1 }
+# Panic-free: an E01 image is untrusted, attacker-controllable input
+# (Paranoid Gatekeeper, ADR-0012).
+unwrap_used = { level = "deny", priority = 0 }
+expect_used = { level = "deny", priority = 0 }
 module_name_repetitions = { level = "allow", priority = 1 }
 # Byte-layout diagrams in doc comments (offset tables, descriptor maps) read as
 # prose tokens to the lint; backticking every offset is noise, not clarity.

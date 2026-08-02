@@ -29,6 +29,7 @@ thiserror = { workspace = true }
 forensic-vfs = { version = "0.7", optional = true }
 log = { workspace = true }
 glob = { workspace = true }
+safe-read = { workspace = true }
 md-5 = { workspace = true, optional = true }
 sha-1 = { workspace = true, optional = true }
 

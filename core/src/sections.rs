@@ -1,4 +1,5 @@
 use crate::error::{EwfError, Result};
+use safe_read::{le_u32, le_u64};
 
 /// EWF v1 magic signature: `"EVF\x09\x0d\x0a\xff\x00"` (8 bytes).
 pub const EVF_SIGNATURE: [u8; 8] = [0x45, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
@@ -41,24 +42,6 @@ pub(crate) const DEFAULT_LRU_SIZE: usize = 100;
 #[must_use]
 pub fn adler32(data: &[u8]) -> u32 {
     adler2::adler32_slice(data)
-}
-
-/// Read a little-endian `u32` at `off`, yielding 0 if out of range (never panics).
-fn le_u32(data: &[u8], off: usize) -> u32 {
-    let mut b = [0u8; 4];
-    if let Some(s) = data.get(off..off + 4) {
-        b.copy_from_slice(s);
-    }
-    u32::from_le_bytes(b)
-}
-
-/// Read a little-endian `u64` at `off`, yielding 0 if out of range (never panics).
-fn le_u64(data: &[u8], off: usize) -> u64 {
-    let mut b = [0u8; 8];
-    if let Some(s) = data.get(off..off + 8) {
-        b.copy_from_slice(s);
-    }
-    u64::from_le_bytes(b)
 }
 
 // ---------------------------------------------------------------------------
@@ -136,8 +119,8 @@ impl SectionDescriptor {
         // Type: 16 bytes, NUL-terminated ASCII
         let type_end = buf[..16].iter().position(|&b| b == 0).unwrap_or(16);
         let section_type = String::from_utf8_lossy(&buf[..type_end]).into_owned();
-        let next = u64::from_le_bytes(buf[16..24].try_into().unwrap());
-        let section_size = u64::from_le_bytes(buf[24..32].try_into().unwrap());
+        let next = le_u64(buf, 16);
+        let section_size = le_u64(buf, 24);
         let stored_crc = le_u32(buf, SECTION_DESCRIPTOR_CRC_OFFSET);
         Ok(Self {
             section_type,
@@ -198,10 +181,10 @@ impl EwfVolume {
             });
         }
         let media_type = buf[0];
-        let chunk_count = u32::from_le_bytes(buf[4..8].try_into().unwrap());
-        let sectors_per_chunk = u32::from_le_bytes(buf[8..12].try_into().unwrap());
-        let bytes_per_sector = u32::from_le_bytes(buf[12..16].try_into().unwrap());
-        let sector_count = u64::from_le_bytes(buf[16..24].try_into().unwrap());
+        let chunk_count = le_u32(buf, 4);
+        let sectors_per_chunk = le_u32(buf, 8);
+        let bytes_per_sector = le_u32(buf, 12);
+        let sector_count = le_u64(buf, 16);
         let mut set_identifier = [0u8; 16];
         if let Some(s) = buf.get(64..80) {
             set_identifier.copy_from_slice(s);
@@ -277,7 +260,7 @@ impl TableEntry {
                 got: buf.len(),
             });
         }
-        let raw = u32::from_le_bytes(buf[..4].try_into().unwrap());
+        let raw = le_u32(buf, 0);
         let compressed = (raw >> 31) != 0;
         let chunk_offset = raw & 0x7FFF_FFFF;
         Ok(Self {

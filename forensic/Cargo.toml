@@ -67,6 +67,7 @@ proptest = "1"
 unsafe_code = "deny"
 
 [lints.clippy]
+all                   = { level = "warn", priority = -1 }
 pedantic              = { level = "warn", priority = -1 }
 correctness           = { level = "deny",  priority = -1 }
 suspicious            = { level = "deny",  priority = -1 }

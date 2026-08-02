@@ -1,4 +1,5 @@
 use crate::types::{AcquisitionError, EwfMetadata};
+use safe_read::le_u32;
 
 /// Parse the tab-delimited text from an EWF `header` section into metadata fields.
 ///
@@ -59,7 +60,7 @@ pub fn parse_error2_data(data: &[u8]) -> Vec<AcquisitionError> {
     if data.len() < 8 {
         return Vec::new();
     }
-    let entry_count = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+    let entry_count = le_u32(data, 0) as usize;
     if entry_count == 0 {
         return Vec::new();
     }
@@ -74,8 +75,8 @@ pub fn parse_error2_data(data: &[u8]) -> Vec<AcquisitionError> {
         if off + 8 > data.len() {
             break;
         }
-        let first_sector = u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
-        let sector_count = u32::from_le_bytes(data[off + 4..off + 8].try_into().unwrap());
+        let first_sector = le_u32(data, off);
+        let sector_count = le_u32(data, off + 4);
         errors.push(AcquisitionError {
             first_sector,
             sector_count,
