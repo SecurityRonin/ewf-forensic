@@ -56,12 +56,23 @@ pub(crate) fn parse_table_section(
     chunk_size: u64,
     sectors_data_end: Option<u64>,
 ) -> Result<Vec<Chunk>> {
+    // `entry_count` is declared by the image, so it is bounded here by what the
+    // buffer can actually hold: four bytes per entry. Without this the capacity
+    // is an allocation the image chose, and the slice below indexes past the
+    // end for any count the buffer does not back.
+    let entry_count = entry_count.min(entries.len() / 4);
     let mut chunks: Vec<Chunk> = Vec::with_capacity(entry_count);
     let mut prev_offset: Option<u64> = None;
 
     for i in 0..entry_count {
         let entry = TableEntry::parse(&entries[i * 4..(i + 1) * 4])?;
-        let abs_offset = u64::from(entry.chunk_offset) + base_offset;
+        // Both operands come from the segment. A wrapped sum would address a
+        // real but wrong offset and yield a chunk read from the wrong place, so
+        // an entry whose absolute offset does not exist is skipped rather than
+        // trusted. The `for` advances on its own, so skipping is safe here.
+        let Some(abs_offset) = u64::from(entry.chunk_offset).checked_add(base_offset) else {
+            continue;
+        };
 
         if let Some(po) = prev_offset {
             if let Some(prev_chunk) = chunks.last_mut() {
@@ -196,7 +207,25 @@ impl LazyChunkTable {
                 meta.segment_idx
             ))
         })?;
-        let mut entries_buf = vec![0u8; meta.entry_count * 4];
+        // Refuse before allocating rather than after reading: `entry_count` is
+        // image-declared, and a table claiming more entry bytes than remain in
+        // the segment is malformed. The short-read check below would catch it
+        // too, but only once the allocation had already been attempted.
+        let want = (meta.entry_count as u64).checked_mul(4).ok_or_else(|| {
+            crate::error::EwfError::Parse(format!(
+                "table section at {:#x} declares {} entries, whose byte length overflows",
+                meta.entries_file_offset, meta.entry_count
+            ))
+        })?;
+        let avail = src.len().saturating_sub(meta.entries_file_offset);
+        if want > avail {
+            return Err(crate::error::EwfError::Parse(format!(
+                "table section at {:#x} declares {} entries ({want} bytes) but only \
+                 {avail} bytes remain in segment {}",
+                meta.entries_file_offset, meta.entry_count, meta.segment_idx
+            )));
+        }
+        let mut entries_buf = vec![0u8; want as usize];
         let n = src.read_at(&mut entries_buf, meta.entries_file_offset)?;
         if n < entries_buf.len() {
             return Err(crate::error::EwfError::Parse(format!(

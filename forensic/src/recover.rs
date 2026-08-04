@@ -311,6 +311,13 @@ fn chunk_range(
     Some((start, end, compressed))
 }
 
+/// Ceiling on the per-chunk byte size a volume section may declare.
+///
+/// The size is `sectors_per_chunk * bytes_per_sector` and both factors are
+/// image-declared, so the product is attacker-chosen and sizes a buffer. EWF
+/// writers use 32 KiB by default and 16 MiB at the largest.
+const MAX_CHUNK_SIZE: u64 = 64 * 1024 * 1024;
+
 /// Decode a chunk's raw byte range into up to `chunk_size` logical bytes,
 /// returning `(bytes, crc_ok)`.
 ///
@@ -413,6 +420,22 @@ fn recover_segments(segments: &[&[u8]], out_path: &Path) -> io::Result<RecoveryR
 
     let chunk_size =
         u64::from(geom.sectors_per_chunk).saturating_mul(u64::from(geom.bytes_per_sector));
+    // Both factors come from the volume section, so their product does too, and
+    // it sizes the per-chunk buffer below (`bytes.resize(logical, 0)`).
+    // `saturating_mul` keeps it from wrapping but still yields a number near
+    // u64::MAX, which is then handed to the allocator -- observed as a request
+    // for 2.8 exabytes. EnCase writes 64 x 512 = 32 KiB by default and at most
+    // 32768 x 512 = 16 MiB, so this ceiling is generous headroom.
+    if chunk_size == 0 || chunk_size > MAX_CHUNK_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "volume declares {} sectors/chunk x {} bytes/sector = {chunk_size} bytes per \
+                 chunk, outside the plausible range 1..={MAX_CHUNK_SIZE}",
+                geom.sectors_per_chunk, geom.bytes_per_sector
+            ),
+        ));
+    }
     let image_size = geom
         .sector_count
         .saturating_mul(u64::from(geom.bytes_per_sector));
