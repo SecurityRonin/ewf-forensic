@@ -4,6 +4,12 @@ All notable changes to `ewf-forensic` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-forensic-v0.7.2...ewf-forensic-v0.7.3) - 2026-08-04
+
+### Fixed
+
+- *(chunks)* GREEN - bound the values the image declares
+
 ## [0.7.2](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-forensic-v0.7.1...ewf-forensic-v0.7.2) - 2026-07-24
 
 ### Documentation

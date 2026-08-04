@@ -4,6 +4,12 @@ All notable changes to `ewf` (the reader) are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-v0.4.7...ewf-v0.4.8) - 2026-08-04
+
+### Fixed
+
+- *(chunks)* GREEN - bound the values the image declares
+
 ## [0.4.7](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-v0.4.6...ewf-v0.4.7) - 2026-07-24
 
 ### Fixed
