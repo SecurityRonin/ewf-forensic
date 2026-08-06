@@ -4,6 +4,12 @@ All notable changes to `ewf-forensic` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-forensic-v0.7.3...ewf-forensic-v0.7.4) - 2026-08-06
+
+### Fixed
+
+- *(core)* GREEN — treat an empty extension as absent; adopt safe-read
+
 ## [0.7.3](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-forensic-v0.7.2...ewf-forensic-v0.7.3) - 2026-08-04
 
 ### Fixed

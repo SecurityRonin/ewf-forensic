@@ -4,6 +4,12 @@ All notable changes to `ewf` (the reader) are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-v0.4.8...ewf-v0.4.9) - 2026-08-06
+
+### Fixed
+
+- *(core)* GREEN — treat an empty extension as absent; adopt safe-read
+
 ## [0.4.8](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-v0.4.7...ewf-v0.4.8) - 2026-08-04
 
 ### Fixed
