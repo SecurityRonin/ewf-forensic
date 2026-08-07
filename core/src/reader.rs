@@ -656,7 +656,7 @@ impl EwfReader {
     ///
     /// Identical bytes to [`open`](Self::open) — the lazy table parses each
     /// `table`/`table2` section's per-entry bytes only when a chunk in it is
-    /// first read, via the SAME [`parse_table_section`] routine the eager path
+    /// first read, via the SAME `parse_table_section` routine (crate-private) the eager path
     /// uses. Trades a small per-read section lookup (binary search + an
     /// occasional section parse on cache miss) for not holding the full
     /// `chunk_count * size_of::<Chunk>()` table resident.
