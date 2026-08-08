@@ -4,6 +4,12 @@ All notable changes to `ewf` (the reader) are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.10](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-v0.4.9...ewf-v0.4.10) - 2026-08-08
+
+### Documentation
+
+- unlink the crate-private parse_table_section from open_lazy's docs
+
 ## [0.4.9](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-v0.4.8...ewf-v0.4.9) - 2026-08-06
 
 ### Fixed
