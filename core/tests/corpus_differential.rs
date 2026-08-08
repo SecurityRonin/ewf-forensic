@@ -2,21 +2,57 @@
 
 /// Byte-level differential tests: EwfReader bytes must match `ewfexport -f raw -u` output.
 ///
-/// These tests skip automatically if libewf's `ewfexport` is not installed,
-/// so they run in CI only on machines where libewf is available.
+/// These tests skip automatically if libewf's `ewfexport` is not installed.
 /// They verify correctness against an independent authoritative reference rather
 /// than against the library's own MD5 hashes (which share the same blind spots).
 use ewf::EwfReader;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::process::Command;
 
-const EWFEXPORT: &str = "/usr/local/bin/ewfexport";
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data");
 
-fn ewf_matches_ewfexport(e01_name: &str) {
-    if !Path::new(EWFEXPORT).exists() {
-        return;
+/// Resolve a usable `ewfexport`, or `None` (the differential then skips).
+///
+/// `PATH` is probed first, so any install location works — including ones a
+/// fixed list cannot anticipate: another package manager's prefix, or a
+/// hand-built install. The absolute
+/// candidates are the fallback for a stripped `PATH`: Homebrew on Apple silicon
+/// and Intel, then `/usr/bin`, where Debian/Ubuntu's `libewf-tools` package
+/// lands it. `EWFEXPORT_BIN` overrides both.
+///
+/// The hardcoded `/usr/local/bin` path this replaces matched only an Intel-Homebrew
+/// or hand-built install, so this differential skipped silently everywhere else.
+fn ewfexport_bin() -> Option<String> {
+    if let Ok(explicit) = std::env::var("EWFEXPORT_BIN") {
+        return usable(&explicit);
     }
+    [
+        "ewfexport",
+        "/opt/homebrew/bin/ewfexport",
+        "/usr/local/bin/ewfexport",
+        "/usr/bin/ewfexport",
+    ]
+    .into_iter()
+    .find_map(usable)
+}
+
+/// A candidate counts only if it actually executes. `ewfexport` has no `--version`
+/// flag and exits non-zero on `-h`, so presence-plus-executability is established
+/// by spawning it and accepting any completed run; a bare `Path::exists()` check
+/// would accept a non-executable file.
+fn usable(candidate: &str) -> Option<String> {
+    Command::new(candidate)
+        .arg("-h")
+        .output()
+        .ok()
+        .map(|_| candidate.to_string())
+}
+
+fn ewf_matches_ewfexport(e01_name: &str) {
+    let Some(ewfexport) = ewfexport_bin() else {
+        return;
+    };
     let e01 = format!("{DATA_DIR}/{e01_name}");
     if !Path::new(&e01).exists() {
         return;
@@ -26,7 +62,7 @@ fn ewf_matches_ewfexport(e01_name: &str) {
     let raw_stem = tmp.path().join("reference");
     let raw_path = tmp.path().join("reference.raw");
 
-    let ok = std::process::Command::new(EWFEXPORT)
+    let ok = Command::new(&ewfexport)
         .args(["-f", "raw", "-u", "-t", raw_stem.to_str().unwrap(), &e01])
         .status()
         .expect("spawn ewfexport")

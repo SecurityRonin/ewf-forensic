@@ -13,6 +13,12 @@ jobs:
   ci:
     uses: SecurityRonin/fleet-ci/.github/workflows/rust-ci.yml@f9802dca64a95eb881fd05dd3f4f16e53b97f2b3
     with:
+      # libewf's ewfexport is the independent oracle for
+      # core/tests/corpus_differential.rs. Without it the differential
+      # resolves no binary and silently no-ops, so the reader is never
+      # cross-validated. The shared workflow installs this on the Linux leg
+      # only (apt-get update first); macOS and Windows skip cleanly.
+      system-packages: ewf-tools
       # MIGRATION DEBT, carried across as-is rather than quietly changed by this
       # PR. This repo enforces an aggregate 85% line floor, not the fleet's
       # per-line gate. A floor cannot honour a `// cov:unreachable` exemption and
