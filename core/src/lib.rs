@@ -909,6 +909,17 @@ mod tests {
         }
     }
 
+    /// A path whose file name ends in a bare `.` makes `Path::extension()`
+    /// return `Some("")` — not `None` — so the `unwrap_or("E01")` fallback in
+    /// `discover_segments` never fires and the extension is the empty string.
+    /// Length 0 is not 4, so the EWF v1 branch runs and takes the first char of
+    /// an empty string. `open` must reject the path, not panic.
+    #[test]
+    fn discover_segments_trailing_dot_is_rejected_not_panic() {
+        let result = EwfReader::open("/tmp/nonexistent_ewf_xyzzy.");
+        assert!(matches!(result, Err(EwfError::NoSegments(_))));
+    }
+
     #[test]
     fn open_segments_empty_path_list() {
         let result = EwfReader::open_segments(&[]);

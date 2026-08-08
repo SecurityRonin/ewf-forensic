@@ -3,6 +3,7 @@
 //! EWF2 is the Expert Witness Compression Format version 2, introduced in `EnCase` 7.
 
 use crate::error::{EwfError, Result};
+use safe_read::{le_u32, le_u64};
 
 // ---------------------------------------------------------------------------
 // Signatures
@@ -149,7 +150,7 @@ impl Ewf2FileHeader {
         let minor_version = buf[9];
         let compression_method =
             CompressionMethod::from_u16(u16::from_le_bytes([buf[10], buf[11]]))?;
-        let segment_number = u32::from_le_bytes(buf[12..16].try_into().unwrap());
+        let segment_number = le_u32(buf, 12);
         let mut set_identifier = [0u8; 16];
         set_identifier.copy_from_slice(&buf[16..32]);
 
@@ -193,13 +194,12 @@ impl Ewf2SectionDescriptor {
             });
         }
 
-        let section_type =
-            Ewf2SectionType::from_u32(u32::from_le_bytes(buf[0..4].try_into().unwrap()));
-        let data_flags = u32::from_le_bytes(buf[4..8].try_into().unwrap());
-        let previous_offset = u64::from_le_bytes(buf[8..16].try_into().unwrap());
-        let data_size = u64::from_le_bytes(buf[16..24].try_into().unwrap());
-        let descriptor_size = u32::from_le_bytes(buf[24..28].try_into().unwrap());
-        let padding_size = u32::from_le_bytes(buf[28..32].try_into().unwrap());
+        let section_type = Ewf2SectionType::from_u32(le_u32(buf, 0));
+        let data_flags = le_u32(buf, 4);
+        let previous_offset = le_u64(buf, 8);
+        let data_size = le_u64(buf, 16);
+        let descriptor_size = le_u32(buf, 24);
+        let padding_size = le_u32(buf, 28);
         let mut data_integrity_hash = [0u8; 16];
         data_integrity_hash.copy_from_slice(&buf[32..48]);
 
@@ -252,9 +252,9 @@ impl Ewf2TableEntry {
         }
 
         Ok(Self {
-            chunk_data_offset: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
-            chunk_data_size: u32::from_le_bytes(buf[8..12].try_into().unwrap()),
-            flags: u32::from_le_bytes(buf[12..16].try_into().unwrap()),
+            chunk_data_offset: le_u64(buf, 0),
+            chunk_data_size: le_u32(buf, 8),
+            flags: le_u32(buf, 12),
         })
     }
 
@@ -295,8 +295,8 @@ impl Ewf2TableHeader {
         }
 
         Ok(Self {
-            first_chunk: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
-            entry_count: u32::from_le_bytes(buf[8..12].try_into().unwrap()),
+            first_chunk: le_u64(buf, 0),
+            entry_count: le_u32(buf, 8),
         })
     }
 }

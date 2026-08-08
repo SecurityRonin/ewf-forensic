@@ -1,6 +1,6 @@
 [package]
 name = "ewf-forensic"
-version = "0.7.3"
+version = "0.7.5"
 edition.workspace = true
 rust-version.workspace = true
 description = "Forensic integrity analysis and repair for EWF (Expert Witness Format / E01) images"
@@ -67,6 +67,7 @@ proptest = "1"
 unsafe_code = "deny"
 
 [lints.clippy]
+all                   = { level = "warn", priority = -1 }
 pedantic              = { level = "warn", priority = -1 }
 correctness           = { level = "deny",  priority = -1 }
 suspicious            = { level = "deny",  priority = -1 }

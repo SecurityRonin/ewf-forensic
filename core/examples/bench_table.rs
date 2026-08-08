@@ -13,6 +13,8 @@
 //!   `cargo run -p ewf --release --example bench_table`
 //! Override chunk count / section size via argv: `bench_table 1000000 16384`.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::io::Write;
 use std::time::Instant;
 

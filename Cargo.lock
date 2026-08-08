@@ -395,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "ewf"
-version = "0.4.8"
+version = "0.4.10"
 dependencies = [
  "adler2",
  "flate2",
@@ -405,6 +405,7 @@ dependencies = [
  "lru",
  "md-5",
  "rayon",
+ "safe-read",
  "sha-1",
  "tempfile",
  "thiserror",
@@ -423,7 +424,7 @@ dependencies = [
 
 [[package]]
 name = "ewf-forensic"
-version = "0.7.3"
+version = "0.7.5"
 dependencies = [
  "blazehash-core",
  "ewf",
@@ -918,6 +919,12 @@ dependencies = [
  "tempfile",
  "wait-timeout",
 ]
+
+[[package]]
+name = "safe-read"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64d801355149a8e005d4736b4b7c7871e65b5797c31bc9930f5a5483e8368a47"
 
 [[package]]
 name = "semver"

@@ -5,6 +5,7 @@ use std::sync::Mutex;
 
 use flate2::read::ZlibDecoder;
 use lru::LruCache;
+use safe_read::{le_u32, le_u64};
 
 use crate::chunk_table::{
     parse_table_section, ChunkTable, LazyChunkTable, SectionMeta, TableSectionRef,
@@ -87,16 +88,26 @@ fn discover_segments(first: &Path) -> Result<Vec<PathBuf>> {
         .ok_or_else(|| EwfError::NoSegments(first.display().to_string()))?;
     let parent = segment_dir(first);
 
-    let ext = first.extension().and_then(|e| e.to_str()).unwrap_or("E01");
+    // `Path::extension()` yields `Some("")` — not `None` — for a name ending in
+    // a bare `.`, which would slip past the `unwrap_or` fallback and leave an
+    // empty extension. Treat an empty extension as absent, which is what the
+    // E01 default is for.
+    let ext = first
+        .extension()
+        .and_then(|e| e.to_str())
+        .filter(|e| !e.is_empty())
+        .unwrap_or("E01");
 
     let escaped_stem = glob::Pattern::escape(stem);
     let parent_str = parent.display();
     let mut paths: Vec<PathBuf> = Vec::new();
 
+    // `ext` is non-empty by construction above, so the default never fires.
+    let prefix = ext.chars().next().map_or('E', |c| c.to_ascii_uppercase());
+    let lc = prefix.to_ascii_lowercase();
+
     if ext.len() == 4 {
         // EWF2: 4-char extensions like Ex01, Lx01
-        let prefix = ext.chars().next().unwrap().to_ascii_uppercase();
-        let lc = prefix.to_ascii_lowercase();
         for pattern in &[
             format!("{parent_str}/{escaped_stem}.[{prefix}{lc}][x-z][0-9][0-9]"),
             format!("{parent_str}/{escaped_stem}.[{prefix}{lc}][x-z][A-Za-z][A-Za-z]"),
@@ -107,8 +118,6 @@ fn discover_segments(first: &Path) -> Result<Vec<PathBuf>> {
         }
     } else {
         // EWF v1: 3-char extensions like E01, L01
-        let prefix = ext.chars().next().unwrap().to_ascii_uppercase();
-        let lc = prefix.to_ascii_lowercase();
         for pattern in &[
             format!("{parent_str}/{escaped_stem}.[{prefix}{lc}][0-9][0-9]"),
             format!("{parent_str}/{escaped_stem}.[{prefix}{lc}][A-Za-z][A-Za-z]"),
@@ -519,15 +528,13 @@ impl EwfReader {
                             let mut tbl_hdr = [0u8; 24];
                             file.read_exact(&mut tbl_hdr)?;
 
-                            let entry_count =
-                                u32::from_le_bytes(tbl_hdr[0..4].try_into().unwrap()) as usize;
+                            let entry_count = le_u32(&tbl_hdr, 0) as usize;
                             if entry_count > MAX_TABLE_ENTRIES {
                                 return Err(EwfError::Parse(format!(
                                     "table entry count {entry_count} exceeds maximum {MAX_TABLE_ENTRIES}"
                                 )));
                             }
-                            let base_offset =
-                                u64::from_le_bytes(tbl_hdr[8..16].try_into().unwrap());
+                            let base_offset = le_u64(&tbl_hdr, 8);
 
                             let entries_offset = desc_offset + SECTION_DESCRIPTOR_SIZE as u64 + 24;
                             file.seek(SeekFrom::Start(entries_offset))?;
@@ -624,8 +631,11 @@ impl EwfReader {
             None => ChunkTable::Eager(chunks),
         };
 
+        // `unwrap_or(MIN)` expresses the same clamp as the former
+        // `.max(1).unwrap()`, but as a total conversion: a 0 cache size becomes
+        // 1 by the type's own floor rather than by a runtime assertion.
         let cache = Mutex::new(LruCache::new(
-            std::num::NonZeroUsize::new(cache_size.max(1)).unwrap(),
+            std::num::NonZeroUsize::new(cache_size).unwrap_or(std::num::NonZeroUsize::MIN),
         ));
 
         Ok(Self {
@@ -646,7 +656,7 @@ impl EwfReader {
     ///
     /// Identical bytes to [`open`](Self::open) — the lazy table parses each
     /// `table`/`table2` section's per-entry bytes only when a chunk in it is
-    /// first read, via the SAME [`parse_table_section`] routine the eager path
+    /// first read, via the SAME `parse_table_section` routine (crate-private) the eager path
     /// uses. Trades a small per-read section lookup (binary search + an
     /// occasional section parse on cache miss) for not holding the full
     /// `chunk_count * size_of::<Chunk>()` table resident.
@@ -861,8 +871,11 @@ impl EwfReader {
             total_size = chunks.len() as u64 * chunk_size;
         }
 
+        // `unwrap_or(MIN)` expresses the same clamp as the former
+        // `.max(1).unwrap()`, but as a total conversion: a 0 cache size becomes
+        // 1 by the type's own floor rather than by a runtime assertion.
         let cache = Mutex::new(LruCache::new(
-            std::num::NonZeroUsize::new(cache_size.max(1)).unwrap(),
+            std::num::NonZeroUsize::new(cache_size).unwrap_or(std::num::NonZeroUsize::MIN),
         ));
 
         // The v2 reader walks raw `File`s; wrap them as `SegmentSource::File` for
