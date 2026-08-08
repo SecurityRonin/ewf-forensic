@@ -79,6 +79,25 @@ fn run_differential(e01_path: &Path) -> Option<DiffResult> {
         String::from_utf8_lossy(&ev.stderr)
     );
 
+    // The oracle failing to OPEN the image is not a verdict on the image.
+    //
+    // Ubuntu ships libewf 20140814, which predates EWF2 and cannot read .Ex01 at
+    // all -- it exits non-zero with "Unable to open EWF image file(s)". Treated as
+    // a verdict that reads as "ewfverify says corrupt, we say clean", i.e. a false
+    // negative in OUR code, when in fact no comparison happened. Skip instead, and
+    // say so out loud: a silently skipped differential looks exactly like a passing
+    // one.
+    if exit != 0 && output.contains("Unable to open EWF image file") {
+        eprintln!(
+            "SKIP differential on {}: the ewfverify build present here cannot open \
+             this image, so there is no oracle verdict to compare against. \
+             Oracle said: {}",
+            e01_path.display(),
+            output.trim()
+        );
+        return None;
+    }
+
     let findings = EwfIntegrityPath::from_path(e01_path)
         .analyse()
         .expect("ewf-forensic I/O must not fail");
