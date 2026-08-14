@@ -274,7 +274,7 @@ version = "0.4.33"
 criteria = "safe-to-deploy"
 
 [[exemptions.lru]]
-version = "0.18.1"
+version = "0.18.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.md-5]]
