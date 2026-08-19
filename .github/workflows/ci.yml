@@ -31,21 +31,3 @@ jobs:
       # paths (or annotating the provably-dead arms), then delete these two lines.
       coverage-gate: floor
       coverage-floor: 85
-
-  # Reporting only — RustCrypto internals (md-5/digest) use unsafe for
-  # performance. Review the output; a spike vs baseline warrants investigation.
-  # Repo-specific, so it stays here rather than moving into the shared workflow.
-  geiger:
-    name: Unsafe Audit (cargo-geiger)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
-        with:
-          cache-on-failure: true
-      - run: cargo install cargo-geiger --locked
-      - run: cargo geiger 2>&1 || true
