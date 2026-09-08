@@ -41,13 +41,19 @@ pub(crate) const DEFAULT_SECTION_CACHE: usize = 8;
 /// offset of the segment's first `sectors` section (for the last-chunk
 /// back-fill), or `None` when the segment has no `sectors` section.
 ///
-/// The two size rules, verbatim from the original inline loop:
+/// The two size rules:
 /// 1. **Within-section back-fill** — `prev_offset` resets per section; when
 ///    pushing chunk *i*, chunk *i-1*'s size is set to `abs_offset_i - prev`
 ///    IFF chunk *i-1* is compressed and the delta is > 0.
 /// 2. **Last-chunk back-fill** — after the loop, the section's final chunk gets
-///    its size from `sectors_data_end - offset` IFF it is compressed, still has
-///    `size == chunk_size`, and `0 < (end - offset) < chunk_size`.
+///    its size from `sectors_data_end - offset`, still has `size == chunk_size`,
+///    and the delta is within bounds — regardless of compression: an
+///    uncompressed last chunk is just as often partial as a compressed one.
+///    The upper bound allows a compressed chunk to exceed the nominal
+///    `chunk_size`, since deflate's own documented worst case is the input
+///    size plus a small constant of framing overhead for incompressible
+///    input, not "always smaller"; an uncompressed chunk is stored 1:1 and so
+///    is still capped at exactly `chunk_size`.
 pub(crate) fn parse_table_section(
     entries: &[u8],
     entry_count: usize,
@@ -97,9 +103,14 @@ pub(crate) fn parse_table_section(
 
     if let Some(end) = sectors_data_end {
         if let Some(last) = chunks.last_mut() {
-            if last.compressed() && last.size() == chunk_size {
+            if last.size() == chunk_size {
                 let actual = end.saturating_sub(last.offset());
-                if actual > 0 && actual < chunk_size {
+                let max_size = if last.compressed() {
+                    chunk_size + (chunk_size >> 12) + (chunk_size >> 14) + 13
+                } else {
+                    chunk_size
+                };
+                if actual > 0 && actual <= max_size {
                     last.set_size(actual);
                 }
             }
