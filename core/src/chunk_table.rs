@@ -105,13 +105,23 @@ pub(crate) fn parse_table_section(
         if let Some(last) = chunks.last_mut() {
             if last.size() == chunk_size {
                 let actual = end.saturating_sub(last.offset());
-                let max_size = if last.compressed() {
-                    chunk_size + (chunk_size >> 12) + (chunk_size >> 14) + 13
+                if last.compressed() {
+                    let max_size = chunk_size + (chunk_size >> 12) + (chunk_size >> 14) + 13;
+                    if actual > 0 && actual <= max_size {
+                        last.set_size(actual);
+                    }
                 } else {
-                    chunk_size
-                };
-                if actual > 0 && actual <= max_size {
-                    last.set_size(actual);
+                    // An uncompressed chunk is followed by its own 4-byte
+                    // adler-32 trailer (`data || checksum`), so the span to
+                    // the sectors-section boundary covers *both* -- the
+                    // real plaintext length is 4 less. Without this, a
+                    // genuinely short last chunk (not just one padded to a
+                    // sector boundary) back-filled to `actual` directly and
+                    // included the trailer's own bytes as if they were
+                    // media data.
+                    if actual > 4 && actual - 4 <= chunk_size {
+                        last.set_size(actual - 4);
+                    }
                 }
             }
         }

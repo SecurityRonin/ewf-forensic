@@ -2720,7 +2720,12 @@ mod tests {
         let tbl_entries_offset: u64 = tbl_hdr_offset + 24;
         let sectors_desc_offset: u64 = tbl_entries_offset + 4;
         let sectors_data_offset: u64 = sectors_desc_offset + SECTION_DESCRIPTOR_SIZE as u64;
-        let done_desc_offset: u64 = sectors_data_offset + data.len() as u64;
+        // An uncompressed chunk is followed by its own 4-byte adler-32
+        // trailer -- real writers (this crate's own EWF1 writer included)
+        // always emit one, so a synthetic fixture that omits it doesn't
+        // exercise the real on-disk shape.
+        let trailer = crate::sections::adler32(&data).to_le_bytes();
+        let done_desc_offset: u64 = sectors_data_offset + data.len() as u64 + trailer.len() as u64;
 
         let mut file_data = Vec::new();
         file_data.extend_from_slice(&EVF_SIGNATURE);
@@ -2762,11 +2767,14 @@ mod tests {
         let mut sec_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
         sec_desc[..7].copy_from_slice(b"sectors");
         sec_desc[16..24].copy_from_slice(&done_desc_offset.to_le_bytes());
-        sec_desc[24..32]
-            .copy_from_slice(&(SECTION_DESCRIPTOR_SIZE as u64 + data.len() as u64).to_le_bytes());
+        sec_desc[24..32].copy_from_slice(
+            &(SECTION_DESCRIPTOR_SIZE as u64 + data.len() as u64 + trailer.len() as u64)
+                .to_le_bytes(),
+        );
         file_data.extend_from_slice(&sec_desc);
 
         file_data.extend_from_slice(&data); // real, partial chunk data
+        file_data.extend_from_slice(&trailer);
 
         let mut done_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
         done_desc[..4].copy_from_slice(b"done");
