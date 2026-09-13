@@ -14,6 +14,7 @@
 //! section".
 
 use crate::error::{EwfError, Result};
+use safe_read::{le_u32, le_u64};
 
 /// Size of the `ltree` section header in bytes.
 pub const LTREE_HEADER_SIZE: usize = 48;
@@ -41,8 +42,20 @@ impl LtreeHeader {
     /// # Errors
     /// [`EwfError::BufferTooShort`] when fewer than [`LTREE_HEADER_SIZE`] bytes
     /// are available.
-    pub fn parse(_buf: &[u8]) -> Result<Self> {
-        Err(EwfError::InvalidSignature)
+    pub fn parse(buf: &[u8]) -> Result<Self> {
+        if buf.len() < LTREE_HEADER_SIZE {
+            return Err(EwfError::BufferTooShort {
+                expected: LTREE_HEADER_SIZE,
+                got: buf.len(),
+            });
+        }
+        let mut data_md5 = [0u8; 16];
+        data_md5.copy_from_slice(&buf[0..16]);
+        Ok(Self {
+            data_md5,
+            data_size: le_u64(buf, 16),
+            checksum: le_u32(buf, 24),
+        })
     }
 
     /// Whether the header's own Adler-32 checks out.
@@ -51,8 +64,15 @@ impl LtreeHeader {
     /// zeroed, so verification must zero the same four bytes rather than skip
     /// them — skipping shortens the buffer and changes the result.
     #[must_use]
-    pub fn verify_checksum(&self, _buf: &[u8]) -> bool {
-        false
+    pub fn verify_checksum(&self, buf: &[u8]) -> bool {
+        let Some(hdr) = buf.get(..LTREE_HEADER_SIZE) else {
+            return false;
+        };
+        // Zero the checksum field rather than skipping it: skipping would
+        // shorten the buffer and change the Adler-32 of everything after it.
+        let mut probe = hdr.to_vec();
+        probe[24..28].fill(0);
+        crate::sections::adler32(&probe) == self.checksum
     }
 }
 
