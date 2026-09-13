@@ -129,16 +129,152 @@ pub struct LogicalTree {
 /// with the evidence. Unpaired halves are replaced, and each replacement is a
 /// reported warning rather than a silent substitution.
 #[must_use]
-pub fn decode_ltree_text(_data: &[u8]) -> (String, usize) {
-    (String::new(), 0)
+pub fn decode_ltree_text(data: &[u8]) -> (String, usize) {
+    let units: Vec<u16> = data
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    let mut out = String::with_capacity(units.len());
+    let mut replaced = 0usize;
+    for r in char::decode_utf16(units.iter().copied()) {
+        match r {
+            Ok(c) => out.push(c),
+            Err(_) => {
+                replaced += 1;
+                out.push(char::REPLACEMENT_CHARACTER);
+            }
+        }
+    }
+    (out, replaced)
 }
 
 /// Parse the `entry` category of an `ltree` body into a tree.
 ///
 /// # Errors
 /// [`EwfError::InvalidSignature`] when no `entry` category is present.
-pub fn parse_entry_tree(_text: &str) -> Result<LogicalTree> {
-    Err(EwfError::InvalidSignature)
+pub fn parse_entry_tree(text: &str) -> Result<LogicalTree> {
+    // Lines are newline-delimited; a stray CR is stripped rather than carried
+    // into a file name.
+    let lines: Vec<&str> = text.split('\n').map(|l| l.trim_end_matches('\r')).collect();
+
+    let cat = lines
+        .iter()
+        .position(|l| *l == "entry")
+        .ok_or(EwfError::InvalidSignature)?;
+    // entry / <count>\t1 / <indicators> / then the category root and entries.
+    let indicators: Vec<String> = lines
+        .get(cat + 2)
+        .ok_or(EwfError::InvalidSignature)?
+        .split('\t')
+        .map(str::to_owned)
+        .collect();
+    if indicators.is_empty() {
+        return Err(EwfError::InvalidSignature);
+    }
+
+    let mut tree = LogicalTree {
+        indicators: indicators.clone(),
+        ..LogicalTree::default()
+    };
+
+    // The category root is itself an entry pair; its sub-count drives the walk.
+    let mut cursor = cat + 3;
+    let root_subs = lines
+        .get(cursor)
+        .and_then(|l| l.split('\t').nth(1))
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .ok_or(EwfError::InvalidSignature)?;
+    cursor += 2; // root's two lines
+
+    for _ in 0..root_subs {
+        cursor = parse_one(&lines, cursor, None, &indicators, &mut tree);
+    }
+    Ok(tree)
+}
+
+/// Parse one entry pair and, recursively, its declared sub-entries.
+///
+/// Returns the cursor just past this entry's subtree. A malformed pair advances
+/// the cursor rather than looping: a reader that cannot make progress on
+/// damaged evidence is worse than one that reports what it could not read.
+fn parse_one(
+    lines: &[&str],
+    mut i: usize,
+    parent: Option<usize>,
+    indicators: &[String],
+    tree: &mut LogicalTree,
+) -> usize {
+    let Some(counts) = lines.get(i) else {
+        return i;
+    };
+    let nsub = counts
+        .split('\t')
+        .nth(1)
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    let Some(values_line) = lines.get(i + 1) else {
+        return i + 1;
+    };
+    let values: Vec<&str> = values_line.split('\t').collect();
+    if values.len() != indicators.len() {
+        tree.warnings.push(format!(
+            "entry at line {i}: {} values for {} declared indicators",
+            values.len(),
+            indicators.len()
+        ));
+    }
+
+    let mut raw = std::collections::BTreeMap::new();
+    for (k, v) in indicators.iter().zip(values.iter()) {
+        raw.insert(k.clone(), (*v).to_owned());
+    }
+    let get = |k: &str| raw.get(k).map(String::as_str).unwrap_or_default();
+
+    // "ha" uses 32 zeros as its ABSENT marker; treating that as a real digest
+    // would assert the file hashed to zero, which is a different claim.
+    let md5 = match get("ha") {
+        "" => None,
+        h if h.bytes().all(|b| b == b'0') => None,
+        h => Some(h.to_owned()),
+    };
+    // The 8.3 alias is stored as "<size including NUL> <name>". The size is a
+    // redundant restatement of the name's length, so a disagreement degrades
+    // THIS FIELD and is reported -- it never refuses the acquisition. libewf
+    // treats the same mismatch as fatal and cannot open files EnCase writes.
+    let raw_snh = get("snh");
+    let short_name = match raw_snh.split_once(' ') {
+        Some((declared, name)) => {
+            if declared.parse::<usize>() != Ok(name.chars().count() + 1) {
+                tree.warnings.push(format!(
+                    "entry at line {i}: short-name size {declared:?} disagrees with its name length"
+                ));
+            }
+            name.to_owned()
+        }
+        None => raw_snh.to_owned(),
+    };
+
+    let idx = tree.entries.len();
+    tree.entries.push(LogicalEntry {
+        name: get("n").to_owned(),
+        short_name,
+        is_dir: get("p") == "1",
+        size: get("ls").trim().parse().unwrap_or(0),
+        md5,
+        id: get("id").trim().parse().unwrap_or(0),
+        children: Vec::new(),
+        parent,
+        raw,
+    });
+    if let Some(p) = parent {
+        tree.entries[p].children.push(idx);
+    }
+
+    i += 2;
+    for _ in 0..nsub {
+        i = parse_one(lines, i, Some(idx), indicators, tree);
+    }
+    i
 }
 
 #[cfg(test)]
