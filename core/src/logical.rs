@@ -137,13 +137,10 @@ pub fn decode_ltree_text(data: &[u8]) -> (String, usize) {
     let mut out = String::with_capacity(units.len());
     let mut replaced = 0usize;
     for r in char::decode_utf16(units.iter().copied()) {
-        match r {
-            Ok(c) => out.push(c),
-            Err(_) => {
-                replaced += 1;
-                out.push(char::REPLACEMENT_CHARACTER);
-            }
-        }
+        out.push(r.unwrap_or_else(|_| {
+            replaced += 1;
+            char::REPLACEMENT_CHARACTER
+        }));
     }
     (out, replaced)
 }
@@ -277,6 +274,105 @@ fn parse_one(
     i
 }
 
+/// Locate and read the `ltree` section of an L01 set, given any segment path.
+///
+/// The tree lives in one segment only — normally the last — so every segment is
+/// walked until it is found. Segment discovery follows EnCase's extension
+/// sequence from the given path.
+///
+/// The body is returned verbatim; the caller verifies it against
+/// [`LtreeHeader::data_md5`]. Verification is deliberately NOT done here:
+/// returning bytes the caller has not been given the chance to check would make
+/// a damaged tree indistinguishable from a sound one.
+///
+/// # Errors
+/// [`EwfError::Io`] on a read failure; [`EwfError::InvalidSignature`] when no
+/// segment carries an `ltree`, or a segment is not an EWF v1 container.
+pub fn find_ltree(first_segment: &std::path::Path) -> Result<(LtreeHeader, Vec<u8>)> {
+    use std::io::{Read as _, Seek as _, SeekFrom};
+
+    for path in segment_paths(first_segment) {
+        let mut f = std::fs::File::open(&path)?;
+        let mut hdr = [0u8; crate::sections::FILE_HEADER_SIZE];
+        if f.read_exact(&mut hdr).is_err() {
+            continue;
+        }
+        // Confirm the container before trusting any offset inside it.
+        crate::sections::EwfFileHeader::parse(&hdr)?;
+
+        let mut off = crate::sections::FILE_HEADER_SIZE as u64;
+        let mut seen = std::collections::HashSet::new();
+        loop {
+            if !seen.insert(off) {
+                break; // a section list that points at itself is not walkable
+            }
+            f.seek(SeekFrom::Start(off))?;
+            let mut d = [0u8; crate::sections::SECTION_DESCRIPTOR_SIZE];
+            if f.read_exact(&mut d).is_err() {
+                break;
+            }
+            let Ok(desc) = crate::sections::SectionDescriptor::parse(&d, off) else {
+                break;
+            };
+            if desc.section_type == "ltree" {
+                let payload_len = (desc.section_size as usize)
+                    .saturating_sub(crate::sections::SECTION_DESCRIPTOR_SIZE);
+                if payload_len < LTREE_HEADER_SIZE {
+                    return Err(EwfError::BufferTooShort {
+                        expected: LTREE_HEADER_SIZE,
+                        got: payload_len,
+                    });
+                }
+                let mut head = vec![0u8; LTREE_HEADER_SIZE];
+                f.read_exact(&mut head)?;
+                let header = LtreeHeader::parse(&head)?;
+                let mut body = vec![0u8; payload_len - LTREE_HEADER_SIZE];
+                f.read_exact(&mut body)?;
+                // The header's declared size is authoritative; a section padded
+                // beyond it must not fold padding into the tree.
+                let declared = usize::try_from(header.data_size).unwrap_or(body.len());
+                if declared < body.len() {
+                    body.truncate(declared);
+                }
+                return Ok((header, body));
+            }
+            if desc.next == off || desc.next == 0 || desc.section_type == "done" {
+                break;
+            }
+            off = desc.next;
+        }
+    }
+    Err(EwfError::InvalidSignature)
+}
+
+/// Segment file paths for an EnCase set, derived from any one of them.
+///
+/// EnCase numbers segments `.L01`, `.L02`, … and the case of the extension
+/// follows whatever the acquisition tool wrote, so both are tried.
+fn segment_paths(first: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = vec![first.to_path_buf()];
+    let Some(stem) = first.file_stem() else {
+        return out;
+    };
+    let upper = first
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.chars().next().is_some_and(char::is_uppercase));
+    let dir = first.parent().unwrap_or(std::path::Path::new("."));
+    for n in 1..=99u32 {
+        let ext = if upper {
+            format!("L{n:02}")
+        } else {
+            format!("l{n:02}")
+        };
+        let p = dir.join(format!("{}.{}", stem.to_string_lossy(), ext));
+        if p.is_file() && p != first {
+            out.push(p);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,18 +472,39 @@ mod tests {
     fn entries_are_read_by_indicator_name_not_position() {
         let a = entry_category(
             &["p", "n", "id", "ls", "ha"],
-            &[(0, vec!["", "report.doc", "7", "1024", "0123456789abcdef0123456789abcdef"])],
+            &[(
+                0,
+                vec![
+                    "",
+                    "report.doc",
+                    "7",
+                    "1024",
+                    "0123456789abcdef0123456789abcdef",
+                ],
+            )],
         );
         let b = entry_category(
             &["ha", "ls", "id", "n", "p"],
-            &[(0, vec!["0123456789abcdef0123456789abcdef", "1024", "7", "report.doc", ""])],
+            &[(
+                0,
+                vec![
+                    "0123456789abcdef0123456789abcdef",
+                    "1024",
+                    "7",
+                    "report.doc",
+                    "",
+                ],
+            )],
         );
 
         let ta = parse_entry_tree(&a).expect("order A parses");
         let tb = parse_entry_tree(&b).expect("order B parses");
 
         for (label, t) in [("A", &ta), ("B", &tb)] {
-            let e = t.entries.last().unwrap_or_else(|| panic!("{label}: an entry"));
+            let e = t
+                .entries
+                .last()
+                .unwrap_or_else(|| panic!("{label}: an entry"));
             assert_eq!(e.name, "report.doc", "{label}: name");
             assert_eq!(e.size, 1024, "{label}: size");
             assert_eq!(e.id, 7, "{label}: id");
@@ -405,7 +522,10 @@ mod tests {
     fn an_all_zero_md5_is_reported_as_absent() {
         let t = entry_category(
             &["p", "n", "id", "ls", "ha"],
-            &[(0, vec!["", "x.bin", "1", "5", "00000000000000000000000000000000"])],
+            &[(
+                0,
+                vec!["", "x.bin", "1", "5", "00000000000000000000000000000000"],
+            )],
         );
         let tree = parse_entry_tree(&t).expect("parses");
         assert_eq!(
@@ -451,7 +571,10 @@ mod tests {
         let tree = parse_entry_tree(&t).expect("parses");
         let e = tree.entries.last().expect("entry");
         assert_eq!(e.raw.get("sha").map(String::as_str), Some("abcd"));
-        assert_eq!(e.raw.get("spth").map(String::as_str), Some("\\\\Device\\\\Foo"));
+        assert_eq!(
+            e.raw.get("spth").map(String::as_str),
+            Some("\\\\Device\\\\Foo")
+        );
         assert_eq!(
             tree.indicators.len(),
             7,
