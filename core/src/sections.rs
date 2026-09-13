@@ -4,6 +4,26 @@ use safe_read::{le_u32, le_u64};
 /// EWF v1 magic signature: `"EVF\x09\x0d\x0a\xff\x00"` (8 bytes).
 pub const EVF_SIGNATURE: [u8; 8] = [0x45, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
 
+/// EWF-L01 magic signature: `"LVF\x09\x0d\x0a\xff\x00"` (8 bytes).
+///
+/// EnCase's *Logical* Evidence File. Same v1 container and section machinery as
+/// an E01, but what it carries is a tree of file ENTRIES in an `ltree` section
+/// rather than disk sectors -- there is no partition table and no filesystem.
+pub const LVF_SIGNATURE: [u8; 8] = [0x4c, 0x56, 0x46, 0x09, 0x0d, 0x0a, 0xff, 0x00];
+
+/// Which EWF v1 container a segment file is.
+///
+/// The header parser reports this rather than assuming, because the two share
+/// every byte of layout after the signature and differ entirely in meaning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EwfKind {
+    /// `EVF` — a physical/bitstream image (E01).
+    Physical,
+    /// `LVF` — a logical evidence file (L01).
+    Logical,
+}
+
 /// Size of the EWF v1 file header in bytes.
 pub const FILE_HEADER_SIZE: usize = 13;
 
@@ -60,6 +80,8 @@ pub fn adler32(data: &[u8]) -> u32 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EwfFileHeader {
     pub segment_number: u16,
+    /// Which container this segment belongs to.
+    pub kind: EwfKind,
 }
 
 impl EwfFileHeader {
@@ -75,7 +97,10 @@ impl EwfFileHeader {
             return Err(EwfError::InvalidSignature);
         }
         let segment_number = u16::from_le_bytes([buf[9], buf[10]]);
-        Ok(Self { segment_number })
+        Ok(Self {
+            segment_number,
+            kind: EwfKind::Physical,
+        })
     }
 }
 
@@ -486,5 +511,53 @@ mod crc_tests {
 
         hdr[0] ^= 0xFF;
         assert_eq!(th.verify_crc(&hdr), Some(false));
+    }
+
+    /// RED: a real L01 begins `LVF`, and the header parser must accept it and
+    /// say which container it is.
+    ///
+    /// Everything after the signature is byte-identical to an E01 header, which
+    /// is exactly why this must be explicit: the two are indistinguishable by
+    /// layout and completely different in meaning. An E01 holds disk sectors; an
+    /// L01 holds a tree of file entries and has no filesystem at all. A reader
+    /// that guesses will hand a caller sectors that are not sectors.
+    #[test]
+    fn file_header_accepts_a_logical_evidence_signature() {
+        let mut hdr = [0u8; FILE_HEADER_SIZE];
+        hdr[0..8].copy_from_slice(&LVF_SIGNATURE);
+        hdr[8] = 0x01;
+        hdr[9..11].copy_from_slice(&7u16.to_le_bytes());
+
+        let h = EwfFileHeader::parse(&hdr).expect("an LVF header is a valid EWF v1 header");
+        assert_eq!(h.segment_number, 7, "segment number is read the same way");
+        assert_eq!(
+            h.kind,
+            EwfKind::Logical,
+            "and the container must be reported as LOGICAL, never guessed"
+        );
+    }
+
+    /// RED: an E01 must still be reported as physical, so the new branch cannot
+    /// silently reclassify every existing image.
+    #[test]
+    fn file_header_still_reports_physical_for_evf() {
+        let mut hdr = [0u8; FILE_HEADER_SIZE];
+        hdr[0..8].copy_from_slice(&EVF_SIGNATURE);
+        hdr[8] = 0x01;
+        hdr[9..11].copy_from_slice(&1u16.to_le_bytes());
+        let h = EwfFileHeader::parse(&hdr).expect("EVF still parses");
+        assert_eq!(h.kind, EwfKind::Physical);
+    }
+
+    /// RED: anything that is neither signature is still refused. Widening the
+    /// parser must not turn it into one that accepts arbitrary bytes.
+    #[test]
+    fn file_header_still_rejects_an_unknown_signature() {
+        let mut hdr = [0u8; FILE_HEADER_SIZE];
+        hdr[0..8].copy_from_slice(b"NOTEWF\x00\x00");
+        assert!(
+            EwfFileHeader::parse(&hdr).is_err(),
+            "an unknown signature must still be refused"
+        );
     }
 }
