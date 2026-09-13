@@ -11,6 +11,7 @@
 //! - Case metadata, stored hashes, and acquisition error parsing
 
 mod chunk_table;
+pub mod logical;
 mod error;
 pub(crate) mod ewf2;
 mod parse;
