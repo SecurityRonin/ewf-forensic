@@ -102,7 +102,7 @@ reader.seek(SeekFrom::Start(1_048_576))?;
 
 - **EWF v1 format** — reads images from EnCase, FTK Imager, Guymager, ewfacquire, etc.
 - **EWF v2 format (Ex01/Lx01)** — reads EnCase 7+ images with format auto-detection
-- **L01 logical evidence files** — opens `.L01`/`.l01` files (same container, logical acquisition)
+- **L01 logical evidence files** — in progress; see the format table below
 - **Multi-segment** — auto-discovers `.E01` through `.EZZ` (v1) and `.Ex01` through `.EzZZ` (v2)
 - **zlib decompression** with LRU caching (configurable, default 100 chunks ~ 3.2 MB)
 - **O(1) seeking** — flat chunk table indexed by `offset / chunk_size`
@@ -184,8 +184,8 @@ ewf = { version = "0.2", default-features = false }
 | E01 (EWF v1) | Supported |
 | E01 multi-segment (.E01-.EZZ) | Supported |
 | Ex01 (EWF v2) | Supported |
-| L01 (logical evidence, v1) | Supported |
-| Lx01 (logical evidence, v2) | Supported |
+| L01 (logical evidence, v1) | **Not yet** — rejected at the LVF signature |
+| Lx01 (logical evidence, v2) | **Not yet** — EWF v2 logical variant |
 | S01 (SMART) | Not yet |
 
 ## Testing

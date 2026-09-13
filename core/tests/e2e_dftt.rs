@@ -366,41 +366,20 @@ fn parse_error2_data_handles_empty() {
     assert!(errors.is_empty());
 }
 
-// ---------- L01 (logical evidence file) support ----------
-
-#[test]
-fn l01_opens_when_extension_is_l01() {
-    // L01 uses the same EWF v1 container format, just a different extension.
-    // Copy a real E01 to a temp dir with .L01 extension and verify it opens.
-    let src = format!("{DATA_DIR}/nps-2010-emails.E01");
-    let tmp = tempfile::tempdir().unwrap();
-    let l01_path = tmp.path().join("evidence.L01");
-    std::fs::copy(&src, &l01_path).unwrap();
-
-    let result = ewf::EwfReader::open(&l01_path);
-    assert!(
-        result.is_ok(),
-        "EwfReader::open should succeed for .L01 files, got: {:?}",
-        result.err()
-    );
-    assert_eq!(result.unwrap().total_size(), 10_485_760);
-}
-
-#[test]
-fn l01_opens_lowercase_extension() {
-    let src = format!("{DATA_DIR}/nps-2010-emails.E01");
-    let tmp = tempfile::tempdir().unwrap();
-    let l01_path = tmp.path().join("evidence.l01");
-    std::fs::copy(&src, &l01_path).unwrap();
-
-    let result = ewf::EwfReader::open(&l01_path);
-    assert!(
-        result.is_ok(),
-        "EwfReader::open should succeed for .l01 files, got: {:?}",
-        result.err()
-    );
-    assert_eq!(result.unwrap().total_size(), 10_485_760);
-}
+// ---------- L01 (logical evidence file) ----------
+//
+// The two tests that stood here asserted L01 support by COPYING AN E01 to a
+// .L01 path and checking it opened. They tested the extension branch and
+// nothing else, while the comment claimed "L01 uses the same EWF v1 container
+// format, just a different extension".
+//
+// That comment is false on both counts. A real L01 begins LVF\x09\x0d\x0a\xff\x00,
+// not EVF, so EwfFileHeader::parse rejects it outright; and the content model is
+// file ENTRIES in an ltree section, not disk sectors. Verified against a real
+// EnCase L01: `ewf info` returns "invalid EWF signature".
+//
+// Real coverage lives in core/tests/logical.rs against a fixture whose bytes
+// follow the LVF layout rather than an E01 wearing its name.
 
 #[test]
 fn l01_full_media_md5_matches() {
