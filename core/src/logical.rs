@@ -373,6 +373,53 @@ fn segment_paths(first: &std::path::Path) -> Vec<std::path::PathBuf> {
     out
 }
 
+/// The authoritative media size for an EWF container.
+///
+/// For a PHYSICAL image the volume section's total size is the disk size and is
+/// trusted; only a zero falls back to the chunk table.
+///
+/// For a LOGICAL container it is not trusted at all. The specification records
+/// that `sector_size x sector_count != total_size` for EWF-L01 and that the real
+/// total lives in the ltree section — the volume section carries some other
+/// quantity. Observed on a real EnCase 8.08 acquisition: the volume section
+/// declares 2,146,959,360 bytes while the chunk table describes 11,940,397,056.
+/// Trusting the declaration caps reads at 2 GiB and silently loses ~83% of the
+/// evidence, with no error raised — every file past the cap simply becomes
+/// unreadable.
+///
+/// The chunk table spans every segment and describes exactly what was stored, so
+/// it is the reliable answer for a logical container.
+#[must_use]
+pub fn media_size_for(kind: crate::sections::EwfKind, declared: u64, chunks: u64, chunk_size: u64) -> u64 {
+    let _ = (kind, chunks, chunk_size);
+    declared // RED stub: trusts the declaration, as the reader does today
+}
+
+/// One extent of a file's data within the media stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Extent {
+    /// Offset from the start of the media data.
+    pub offset: u64,
+    /// Length in bytes.
+    pub size: u64,
+    /// A sparse extent reads back as zeroes; no media data is stored for it.
+    pub sparse: bool,
+}
+
+/// Parse a `be` (binary extents) value.
+///
+/// Format: a count, then per extent an optional type letter (`S` for sparse)
+/// followed by a hexadecimal offset and size, all space separated. Offsets are
+/// relative to the start of the media data.
+///
+/// # Errors
+/// [`EwfError::InvalidSignature`] when the value is not shaped as the format
+/// describes.
+pub fn parse_binary_extents(_value: &str) -> Result<Vec<Extent>> {
+    Err(EwfError::InvalidSignature)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,5 +651,93 @@ mod tests {
             parse_entry_tree("5\nrec\n1\t2\n").is_err(),
             "no entry category means no file tree"
         );
+    }
+
+    use crate::sections::EwfKind;
+
+    /// RED: a logical container's declared media size must be ignored.
+    ///
+    /// This is not a tidy-up. A real EnCase 8.08 L01 declares 2,146,959,360
+    /// bytes in its volume section while its chunk table describes
+    /// 11,940,397,056. Trusting the declaration caps reads at 2 GiB and loses
+    /// ~83% of the evidence with no error raised: the files past the cap simply
+    /// cannot be read, which on an exhibit is the worst kind of failure —
+    /// silent and total.
+    #[test]
+    fn a_logical_container_ignores_the_declared_media_size() {
+        let declared = 2_146_959_360u64;
+        let chunks = 45_549u64;
+        let chunk_size = 262_144u64;
+        assert_eq!(
+            media_size_for(EwfKind::Logical, declared, chunks, chunk_size),
+            chunks * chunk_size,
+            "the chunk table, not the volume section, describes a logical container"
+        );
+    }
+
+    /// RED: a physical image must still trust its volume section, so the fix
+    /// cannot change how every existing E01 is read.
+    #[test]
+    fn a_physical_image_still_trusts_its_declared_media_size() {
+        assert_eq!(
+            media_size_for(EwfKind::Physical, 10_485_760, 320, 32_768),
+            10_485_760,
+            "an E01's declared disk size is authoritative"
+        );
+    }
+
+    /// RED: the existing zero-fallback for physical images survives.
+    #[test]
+    fn a_physical_image_with_no_declared_size_falls_back_to_chunks() {
+        assert_eq!(media_size_for(EwfKind::Physical, 0, 320, 32_768), 320 * 32_768);
+    }
+
+    /// RED: binary extents are hex, and the count must be honoured.
+    #[test]
+    fn binary_extents_parse_offset_and_size_as_hex() {
+        let e = parse_binary_extents("1 1a2b3c 4000").expect("a one-extent value parses");
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0].offset, 0x1a_2b3c, "offset is hexadecimal");
+        assert_eq!(e[0].size, 0x4000, "and so is size");
+        assert!(!e[0].sparse);
+    }
+
+    /// RED: multiple extents, because a file need not be contiguous.
+    #[test]
+    fn binary_extents_parse_multiple_extents() {
+        let e = parse_binary_extents("2 0 1000 1000 800").expect("parses");
+        assert_eq!(e.len(), 2);
+        assert_eq!((e[0].offset, e[0].size), (0, 0x1000));
+        assert_eq!((e[1].offset, e[1].size), (0x1000, 0x800));
+    }
+
+    /// RED: a sparse extent is marked, not skipped.
+    ///
+    /// Sparse means no media data was stored and the region reads as zeroes.
+    /// Dropping it would shorten the file; treating it as stored data would read
+    /// someone else's bytes into this file.
+    #[test]
+    fn a_sparse_extent_is_flagged_rather_than_dropped() {
+        let e = parse_binary_extents("1 S 0 1000").expect("parses");
+        assert_eq!(e.len(), 1);
+        assert!(e[0].sparse, "S marks a sparse extent");
+        assert_eq!(e[0].size, 0x1000, "and it still has a length");
+    }
+
+    /// RED: a value whose token count contradicts its declared extent count is
+    /// refused rather than half-read.
+    #[test]
+    fn binary_extents_reject_a_truncated_value() {
+        assert!(
+            parse_binary_extents("2 0 1000").is_err(),
+            "two extents declared but one supplied must be refused"
+        );
+    }
+
+    /// RED: an empty value means no extents, not an error — a zero-length file
+    /// legitimately has none.
+    #[test]
+    fn binary_extents_accept_an_empty_value_as_no_extents() {
+        assert_eq!(parse_binary_extents("0").expect("parses"), vec![]);
     }
 }
