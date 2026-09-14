@@ -390,9 +390,18 @@ fn segment_paths(first: &std::path::Path) -> Vec<std::path::PathBuf> {
 /// The chunk table spans every segment and describes exactly what was stored, so
 /// it is the reliable answer for a logical container.
 #[must_use]
-pub fn media_size_for(kind: crate::sections::EwfKind, declared: u64, chunks: u64, chunk_size: u64) -> u64 {
-    let _ = (kind, chunks, chunk_size);
-    declared // RED stub: trusts the declaration, as the reader does today
+pub fn media_size_for(
+    kind: crate::sections::EwfKind,
+    declared: u64,
+    chunks: u64,
+    chunk_size: u64,
+) -> u64 {
+    let from_chunks = chunks.saturating_mul(chunk_size);
+    match kind {
+        crate::sections::EwfKind::Logical => from_chunks,
+        crate::sections::EwfKind::Physical if declared == 0 => from_chunks,
+        crate::sections::EwfKind::Physical => declared,
+    }
 }
 
 /// One extent of a file's data within the media stream.
@@ -416,8 +425,34 @@ pub struct Extent {
 /// # Errors
 /// [`EwfError::InvalidSignature`] when the value is not shaped as the format
 /// describes.
-pub fn parse_binary_extents(_value: &str) -> Result<Vec<Extent>> {
-    Err(EwfError::InvalidSignature)
+pub fn parse_binary_extents(value: &str) -> Result<Vec<Extent>> {
+    let mut it = value.split_whitespace();
+    let count: usize = it
+        .next()
+        .and_then(|v| v.parse().ok())
+        .ok_or(EwfError::InvalidSignature)?;
+
+    let mut out = Vec::with_capacity(count.min(1024));
+    for _ in 0..count {
+        // A leading non-hex token is a type flag; only "S" (sparse) is defined,
+        // and an unknown flag is carried as non-sparse rather than refused --
+        // refusing would lose the whole acquisition over one annotation.
+        let mut tok = it.next().ok_or(EwfError::InvalidSignature)?;
+        let mut sparse = false;
+        while tok.eq_ignore_ascii_case("s") || u64::from_str_radix(tok, 16).is_err() {
+            sparse |= tok.eq_ignore_ascii_case("s");
+            tok = it.next().ok_or(EwfError::InvalidSignature)?;
+        }
+        let offset = u64::from_str_radix(tok, 16).map_err(|_| EwfError::InvalidSignature)?;
+        let size_tok = it.next().ok_or(EwfError::InvalidSignature)?;
+        let size = u64::from_str_radix(size_tok, 16).map_err(|_| EwfError::InvalidSignature)?;
+        out.push(Extent {
+            offset,
+            size,
+            sparse,
+        });
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -689,7 +724,10 @@ mod tests {
     /// RED: the existing zero-fallback for physical images survives.
     #[test]
     fn a_physical_image_with_no_declared_size_falls_back_to_chunks() {
-        assert_eq!(media_size_for(EwfKind::Physical, 0, 320, 32_768), 320 * 32_768);
+        assert_eq!(
+            media_size_for(EwfKind::Physical, 0, 320, 32_768),
+            320 * 32_768
+        );
     }
 
     /// RED: binary extents are hex, and the count must be honoured.

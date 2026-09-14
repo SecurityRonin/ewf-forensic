@@ -633,6 +633,17 @@ impl EwfReader {
 
         // `unwrap_or(MIN)` expresses the same clamp as the former
         // `.max(1).unwrap()`, but as a total conversion: a 0 cache size becomes
+        // A LOGICAL container's volume section does not describe the media.
+        // The spec records sector_size x sector_count != total_size for EWF-L01;
+        // observed on a real EnCase 8.08 acquisition, the declaration is 2 GiB
+        // against a chunk table describing 11.9 GB. Trusting it caps reads at
+        // 2 GiB and loses most of the evidence with no error raised.
+        let kind = headers
+            .first()
+            .map_or(crate::sections::EwfKind::Physical, |h| h.kind);
+        let total_size =
+            crate::logical::media_size_for(kind, total_size, chunks.len() as u64, chunk_size);
+
         // 1 by the type's own floor rather than by a runtime assertion.
         let cache = Mutex::new(LruCache::new(
             std::num::NonZeroUsize::new(cache_size).unwrap_or(std::num::NonZeroUsize::MIN),
