@@ -133,3 +133,86 @@ fn a_real_l01_accounts_for_every_file() {
         }
     }
 }
+
+/// The strongest available check: bytes recovered by OUR extent reader must
+/// hash to the MD5 **EnCase recorded at acquisition**.
+///
+/// That hash is an independent oracle in the strict sense — written by another
+/// vendor's tool, from the original file, before this code existed. It cannot
+/// be satisfied by a reader that is internally consistent but wrong: a wrong
+/// offset, a wrong length, an unhandled sparse extent or a missing truncation
+/// all change the digest.
+///
+/// A sample is taken rather than the whole set, so the test stays a test. The
+/// sample is deterministic (every Nth file), not random, so a failure is
+/// reproducible.
+#[test]
+fn recovered_bytes_match_the_acquisition_md5() {
+    let path = require_l01!();
+    let (_, body) = ewf::logical::find_ltree(&path).expect("ltree");
+    let (text, _) = ewf::logical::decode_ltree_text(&body);
+    let tree = ewf::logical::parse_entry_tree(&text).expect("parses");
+
+    let mut media = ewf::EwfReader::open(&path).expect("the media stream must open");
+
+    let candidates: Vec<usize> = tree
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| !e.is_dir && e.md5.is_some() && e.size > 0)
+        .map(|(i, _)| i)
+        .collect();
+    assert!(
+        !candidates.is_empty(),
+        "the acquisition must contain hashed files to check against"
+    );
+
+    // Sample size is tunable so the committed test stays fast while a full
+    // sweep of an exhibit is one environment variable away.
+    let want: usize = std::env::var("EWF_L01_SAMPLE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
+    let sample: Vec<usize> = candidates
+        .iter()
+        .copied()
+        .step_by((candidates.len() / want.max(1)).max(1))
+        .take(want)
+        .collect();
+
+    use md5::{Digest as _, Md5};
+    let mut checked = 0usize;
+    let mut mismatches = Vec::new();
+    for i in sample {
+        let e = &tree.entries[i];
+        let data = match tree.read_entry(&mut media, i) {
+            Ok(d) => d,
+            Err(err) => {
+                mismatches.push(format!("entry {i}: read failed: {err}"));
+                continue;
+            }
+        };
+        let got = format!("{:x}", Md5::digest(&data));
+        let want = e.md5.clone().unwrap_or_default().to_ascii_lowercase();
+        if got != want {
+            mismatches.push(format!(
+                "entry {i}: size {} declared, {} recovered",
+                e.size,
+                data.len()
+            ));
+        }
+        checked += 1;
+    }
+    eprintln!("  verified {checked} files against their acquisition MD5");
+    assert!(
+        mismatches.is_empty(),
+        "{} of {checked} files did not match the MD5 EnCase recorded:\n{}",
+        mismatches.len(),
+        mismatches
+            .iter()
+            .take(5)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}

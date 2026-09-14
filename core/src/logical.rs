@@ -455,6 +455,92 @@ pub fn parse_binary_extents(value: &str) -> Result<Vec<Extent>> {
     Ok(out)
 }
 
+impl LogicalEntry {
+    /// The extents locating this entry's data in the media stream.
+    ///
+    /// # Errors
+    /// [`EwfError::InvalidSignature`] when the stored `be` value is malformed.
+    pub fn extents(&self) -> Result<Vec<Extent>> {
+        match self.raw.get("be").map(String::as_str) {
+            None | Some("") => Ok(Vec::new()),
+            Some(v) => parse_binary_extents(v),
+        }
+    }
+}
+
+impl LogicalTree {
+    /// Read one entry's file data from the media stream.
+    ///
+    /// Sparse extents are zero-filled; stored extents are read at their media
+    /// offset. The result is truncated to the entry's logical size, because an
+    /// extent is allocated in whole chunks and the tail beyond `ls` is padding
+    /// that was never part of the file.
+    ///
+    /// # Errors
+    /// [`EwfError::Io`] on a read failure, or [`EwfError::InvalidSignature`]
+    /// when the entry's extents are malformed.
+    pub fn read_entry<R: std::io::Read + std::io::Seek>(
+        &self,
+        media: &mut R,
+        index: usize,
+    ) -> Result<Vec<u8>> {
+        let entry = self.entries.get(index).ok_or(EwfError::InvalidSignature)?;
+        if entry.is_dir {
+            return Ok(Vec::new());
+        }
+        // EnCase deduplicates: when identical content appears more than once it
+        // is stored ONCE and every later entry carries a 1-byte placeholder
+        // extent plus `du`, the duplicate data offset. Reading the placeholder
+        // literally returns one byte for a file of any size -- silently, and it
+        // looks like success until a hash is checked. Observed here: 25,751 of
+        // 64,689 files (40%) are stored this way.
+        //
+        // `du` is DECIMAL, unlike the hexadecimal offsets in `be`. Established
+        // from the evidence rather than assumed: read as decimal every value
+        // lands inside the 11.94 GB media, while as hex 25,110 of them point
+        // past its end.
+        let extents = entry.extents()?;
+        let is_placeholder = entry.size > 1 && extents.iter().map(|e| e.size).sum::<u64>() <= 1;
+        if is_placeholder {
+            if let Some(off) = entry
+                .raw
+                .get("du")
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .filter(|o| *o > 0)
+            {
+                let want = usize::try_from(entry.size).unwrap_or(usize::MAX);
+                let mut buf = vec![0u8; want];
+                media.seek(std::io::SeekFrom::Start(off))?;
+                media.read_exact(&mut buf)?;
+                return Ok(buf);
+            }
+        }
+
+        let mut out = Vec::new();
+        for ex in extents {
+            let want = usize::try_from(ex.size).unwrap_or(usize::MAX);
+            if ex.sparse {
+                // No media data was stored for a sparse extent; it reads as
+                // zeroes. Seeking to a media offset for it would return some
+                // other file's bytes.
+                out.resize(out.len() + want, 0);
+                continue;
+            }
+            media.seek(std::io::SeekFrom::Start(ex.offset))?;
+            let start = out.len();
+            out.resize(start + want, 0);
+            media.read_exact(&mut out[start..])?;
+        }
+        // `ls` is the file's length; the extent is chunk-aligned and its tail is
+        // padding. Returning the padding would change every hash.
+        let logical = usize::try_from(entry.size).unwrap_or(usize::MAX);
+        if out.len() > logical {
+            out.truncate(logical);
+        }
+        Ok(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
