@@ -2698,6 +2698,224 @@ mod tests {
         );
     }
 
+    #[test]
+    fn uncompressed_last_chunk_backfills_to_its_real_size() {
+        // A real disk/partition acquisition is virtually never an exact
+        // multiple of chunk_size, so its uncompressed last chunk is almost
+        // always partial. Before the fix, the back-fill only ever applied to
+        // a *compressed* last chunk (`if last.compressed() && ...`) -- an
+        // uncompressed one kept the full nominal chunk_size regardless of
+        // how much real data actually followed, so any read of it walked
+        // past the real on-disk bytes into whatever followed in the file.
+        let chunk_size: u32 = 32768;
+        let sectors_per_chunk: u32 = 64;
+        let bytes_per_sector: u32 = 512;
+        let real_len: usize = 512; // one sector -- far short of one full chunk
+        let data = vec![0xABu8; real_len];
+
+        let vol_desc_offset: u64 = FILE_HEADER_SIZE as u64;
+        let vol_data_offset: u64 = vol_desc_offset + SECTION_DESCRIPTOR_SIZE as u64;
+        let tbl_desc_offset: u64 = vol_data_offset + 94;
+        let tbl_hdr_offset: u64 = tbl_desc_offset + SECTION_DESCRIPTOR_SIZE as u64;
+        let tbl_entries_offset: u64 = tbl_hdr_offset + 24;
+        let sectors_desc_offset: u64 = tbl_entries_offset + 4;
+        let sectors_data_offset: u64 = sectors_desc_offset + SECTION_DESCRIPTOR_SIZE as u64;
+        // An uncompressed chunk is followed by its own 4-byte adler-32
+        // trailer -- real writers (this crate's own EWF1 writer included)
+        // always emit one, so a synthetic fixture that omits it doesn't
+        // exercise the real on-disk shape.
+        let trailer = crate::sections::adler32(&data).to_le_bytes();
+        let done_desc_offset: u64 = sectors_data_offset + data.len() as u64 + trailer.len() as u64;
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(&EVF_SIGNATURE);
+        file_data.push(0x01);
+        file_data.extend_from_slice(&1u16.to_le_bytes());
+        file_data.extend_from_slice(&0u16.to_le_bytes());
+
+        let mut vol_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
+        vol_desc[..6].copy_from_slice(b"volume");
+        vol_desc[16..24].copy_from_slice(&tbl_desc_offset.to_le_bytes());
+        vol_desc[24..32].copy_from_slice(&(SECTION_DESCRIPTOR_SIZE as u64 + 94).to_le_bytes());
+        file_data.extend_from_slice(&vol_desc);
+
+        let mut vol_data = [0u8; 94];
+        vol_data[0..4].copy_from_slice(&1u32.to_le_bytes()); // media_type = fixed
+        vol_data[4..8].copy_from_slice(&1u32.to_le_bytes()); // chunk_count = 1
+        vol_data[8..12].copy_from_slice(&sectors_per_chunk.to_le_bytes());
+        vol_data[12..16].copy_from_slice(&bytes_per_sector.to_le_bytes());
+        // sector_count = 1: total media size is one real sector (512 bytes),
+        // not the full chunk -- this is what makes the only chunk "the last
+        // chunk, partial".
+        vol_data[16..24].copy_from_slice(&1u64.to_le_bytes());
+        file_data.extend_from_slice(&vol_data);
+
+        let mut tbl_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
+        tbl_desc[..5].copy_from_slice(b"table");
+        tbl_desc[16..24].copy_from_slice(&sectors_desc_offset.to_le_bytes());
+        tbl_desc[24..32].copy_from_slice(&(SECTION_DESCRIPTOR_SIZE as u64 + 24 + 4).to_le_bytes());
+        file_data.extend_from_slice(&tbl_desc);
+
+        let mut tbl_hdr = [0u8; 24];
+        tbl_hdr[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tbl_hdr[8..16].copy_from_slice(&sectors_data_offset.to_le_bytes());
+        file_data.extend_from_slice(&tbl_hdr);
+
+        let entry: u32 = 0x0000_0000; // uncompressed, offset = 0
+        file_data.extend_from_slice(&entry.to_le_bytes());
+
+        let mut sec_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
+        sec_desc[..7].copy_from_slice(b"sectors");
+        sec_desc[16..24].copy_from_slice(&done_desc_offset.to_le_bytes());
+        sec_desc[24..32].copy_from_slice(
+            &(SECTION_DESCRIPTOR_SIZE as u64 + data.len() as u64 + trailer.len() as u64)
+                .to_le_bytes(),
+        );
+        file_data.extend_from_slice(&sec_desc);
+
+        file_data.extend_from_slice(&data); // real, partial chunk data
+        file_data.extend_from_slice(&trailer);
+
+        let mut done_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
+        done_desc[..4].copy_from_slice(b"done");
+        done_desc[24..32].copy_from_slice(&(SECTION_DESCRIPTOR_SIZE as u64).to_le_bytes());
+        file_data.extend_from_slice(&done_desc);
+
+        let mut tmp = tempfile::Builder::new().suffix(".E01").tempfile().unwrap();
+        tmp.write_all(&file_data).unwrap();
+        tmp.flush().unwrap();
+
+        let mut reader = EwfReader::open(tmp.path()).unwrap();
+        assert_eq!(reader.chunk_count(), 1);
+        let c0 = reader.chunk_meta(0);
+        assert!(!c0.compressed());
+        assert_eq!(
+            c0.size(),
+            real_len as u64,
+            "uncompressed last chunk should back-fill to its real on-disk size ({real_len}), not chunk_size ({chunk_size})"
+        );
+
+        let mut buf = vec![0u8; real_len];
+        reader.read_exact(&mut buf).unwrap();
+        assert_eq!(buf, data);
+    }
+
+    #[test]
+    fn compressed_last_chunk_can_exceed_nominal_chunk_size() {
+        // Deflate's own documented worst case is input size plus a small
+        // constant of framing overhead -- genuinely incompressible input
+        // (already-compressed or already-encrypted data, or in this test, a
+        // buffer built to defeat the compressor) can legitimately produce a
+        // chunk *larger* than chunk_size. Before the fix, the back-fill's
+        // upper bound (`actual < chunk_size`) rejected this entirely valid
+        // case and silently left the wrong default chunk_size in place,
+        // truncating the real (longer) compressed stream on read.
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+
+        let chunk_size: u32 = 32768;
+        let sectors_per_chunk: u32 = 64;
+        let bytes_per_sector: u32 = 512;
+
+        // Pseudo-random, incompressible payload -- deflate typically expands
+        // this slightly rather than shrinking it.
+        let mut data = Vec::with_capacity(chunk_size as usize);
+        let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+        while data.len() < chunk_size as usize {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            data.extend_from_slice(&state.to_le_bytes());
+        }
+        data.truncate(chunk_size as usize);
+
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&data).unwrap();
+        let compressed = encoder.finish().unwrap();
+        assert!(
+            compressed.len() > chunk_size as usize,
+            "test payload must actually expand under deflate to exercise this path, got {} vs chunk_size {chunk_size}",
+            compressed.len()
+        );
+
+        let sector_count = u64::from(chunk_size / bytes_per_sector);
+        let vol_desc_offset: u64 = FILE_HEADER_SIZE as u64;
+        let vol_data_offset: u64 = vol_desc_offset + SECTION_DESCRIPTOR_SIZE as u64;
+        let tbl_desc_offset: u64 = vol_data_offset + 94;
+        let tbl_hdr_offset: u64 = tbl_desc_offset + SECTION_DESCRIPTOR_SIZE as u64;
+        let tbl_entries_offset: u64 = tbl_hdr_offset + 24;
+        let sectors_desc_offset: u64 = tbl_entries_offset + 4;
+        let sectors_data_offset: u64 = sectors_desc_offset + SECTION_DESCRIPTOR_SIZE as u64;
+        let done_desc_offset: u64 = sectors_data_offset + compressed.len() as u64;
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(&EVF_SIGNATURE);
+        file_data.push(0x01);
+        file_data.extend_from_slice(&1u16.to_le_bytes());
+        file_data.extend_from_slice(&0u16.to_le_bytes());
+
+        let mut vol_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
+        vol_desc[..6].copy_from_slice(b"volume");
+        vol_desc[16..24].copy_from_slice(&tbl_desc_offset.to_le_bytes());
+        vol_desc[24..32].copy_from_slice(&(SECTION_DESCRIPTOR_SIZE as u64 + 94).to_le_bytes());
+        file_data.extend_from_slice(&vol_desc);
+
+        let mut vol_data = [0u8; 94];
+        vol_data[0..4].copy_from_slice(&1u32.to_le_bytes());
+        vol_data[4..8].copy_from_slice(&1u32.to_le_bytes());
+        vol_data[8..12].copy_from_slice(&sectors_per_chunk.to_le_bytes());
+        vol_data[12..16].copy_from_slice(&bytes_per_sector.to_le_bytes());
+        vol_data[16..24].copy_from_slice(&sector_count.to_le_bytes());
+        file_data.extend_from_slice(&vol_data);
+
+        let mut tbl_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
+        tbl_desc[..5].copy_from_slice(b"table");
+        tbl_desc[16..24].copy_from_slice(&sectors_desc_offset.to_le_bytes());
+        tbl_desc[24..32].copy_from_slice(&(SECTION_DESCRIPTOR_SIZE as u64 + 24 + 4).to_le_bytes());
+        file_data.extend_from_slice(&tbl_desc);
+
+        let mut tbl_hdr = [0u8; 24];
+        tbl_hdr[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tbl_hdr[8..16].copy_from_slice(&sectors_data_offset.to_le_bytes());
+        file_data.extend_from_slice(&tbl_hdr);
+
+        let entry: u32 = 0x8000_0000; // compressed, offset = 0
+        file_data.extend_from_slice(&entry.to_le_bytes());
+
+        let mut sec_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
+        sec_desc[..7].copy_from_slice(b"sectors");
+        sec_desc[16..24].copy_from_slice(&done_desc_offset.to_le_bytes());
+        sec_desc[24..32].copy_from_slice(
+            &(SECTION_DESCRIPTOR_SIZE as u64 + compressed.len() as u64).to_le_bytes(),
+        );
+        file_data.extend_from_slice(&sec_desc);
+
+        file_data.extend_from_slice(&compressed);
+
+        let mut done_desc = [0u8; SECTION_DESCRIPTOR_SIZE];
+        done_desc[..4].copy_from_slice(b"done");
+        done_desc[24..32].copy_from_slice(&(SECTION_DESCRIPTOR_SIZE as u64).to_le_bytes());
+        file_data.extend_from_slice(&done_desc);
+
+        let mut tmp = tempfile::Builder::new().suffix(".E01").tempfile().unwrap();
+        tmp.write_all(&file_data).unwrap();
+        tmp.flush().unwrap();
+
+        let mut reader = EwfReader::open(tmp.path()).unwrap();
+        assert_eq!(reader.chunk_count(), 1);
+        let c0 = reader.chunk_meta(0);
+        assert!(c0.compressed());
+        assert_eq!(
+            c0.size(),
+            compressed.len() as u64,
+            "compressed last chunk should back-fill to its real (expanded) size, not stay at the truncated default"
+        );
+
+        let mut buf = vec![0u8; chunk_size as usize];
+        reader.read_exact(&mut buf).unwrap();
+        assert_eq!(buf, data);
+    }
+
     // -- DoS guard: reject absurd table entry_count --
 
     #[test]

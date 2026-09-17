@@ -41,13 +41,19 @@ pub(crate) const DEFAULT_SECTION_CACHE: usize = 8;
 /// offset of the segment's first `sectors` section (for the last-chunk
 /// back-fill), or `None` when the segment has no `sectors` section.
 ///
-/// The two size rules, verbatim from the original inline loop:
+/// The two size rules:
 /// 1. **Within-section back-fill** — `prev_offset` resets per section; when
 ///    pushing chunk *i*, chunk *i-1*'s size is set to `abs_offset_i - prev`
 ///    IFF chunk *i-1* is compressed and the delta is > 0.
 /// 2. **Last-chunk back-fill** — after the loop, the section's final chunk gets
-///    its size from `sectors_data_end - offset` IFF it is compressed, still has
-///    `size == chunk_size`, and `0 < (end - offset) < chunk_size`.
+///    its size from `sectors_data_end - offset`, still has `size == chunk_size`,
+///    and the delta is within bounds — regardless of compression: an
+///    uncompressed last chunk is just as often partial as a compressed one.
+///    The upper bound allows a compressed chunk to exceed the nominal
+///    `chunk_size`, since deflate's own documented worst case is the input
+///    size plus a small constant of framing overhead for incompressible
+///    input, not "always smaller"; an uncompressed chunk is stored 1:1 and so
+///    is still capped at exactly `chunk_size`.
 pub(crate) fn parse_table_section(
     entries: &[u8],
     entry_count: usize,
@@ -97,10 +103,25 @@ pub(crate) fn parse_table_section(
 
     if let Some(end) = sectors_data_end {
         if let Some(last) = chunks.last_mut() {
-            if last.compressed() && last.size() == chunk_size {
+            if last.size() == chunk_size {
                 let actual = end.saturating_sub(last.offset());
-                if actual > 0 && actual < chunk_size {
-                    last.set_size(actual);
+                if last.compressed() {
+                    let max_size = chunk_size + (chunk_size >> 12) + (chunk_size >> 14) + 13;
+                    if actual > 0 && actual <= max_size {
+                        last.set_size(actual);
+                    }
+                } else {
+                    // An uncompressed chunk is followed by its own 4-byte
+                    // adler-32 trailer (`data || checksum`), so the span to
+                    // the sectors-section boundary covers *both* -- the
+                    // real plaintext length is 4 less. Without this, a
+                    // genuinely short last chunk (not just one padded to a
+                    // sector boundary) back-filled to `actual` directly and
+                    // included the trailer's own bytes as if they were
+                    // media data.
+                    if actual > 4 && actual - 4 <= chunk_size {
+                        last.set_size(actual - 4);
+                    }
                 }
             }
         }
@@ -307,13 +328,15 @@ impl ChunkTable {
 }
 
 /// Section descriptor data the lazy index builder needs from `open()`'s
-/// descriptor walk: the table section's file offset and the segment's
-/// `sectors`-section end (shared across all table sections in that segment).
+/// descriptor walk: just the table section's own file offset. Which
+/// `sectors` section backs it is resolved from `base_offset` (read from the
+/// table's own header, right below) against `sectors_by_data_start`, not
+/// assumed from file position — a `table`/`table2` section is not always
+/// preceded by its own `sectors` section on disk; some real writers emit
+/// the table *before* the sectors data it describes.
 pub(crate) struct TableSectionRef {
     /// Absolute file offset of the `table`/`table2` section descriptor.
     pub(crate) desc_offset: u64,
-    /// End offset of the segment's first `sectors` section (back-fill bound).
-    pub(crate) sectors_data_end: Option<u64>,
 }
 
 impl TableSectionRef {
@@ -321,14 +344,19 @@ impl TableSectionRef {
     /// header (entry count + base offset) — never the per-entry bytes.
     ///
     /// `first_chunk_id` is the running global chunk count before this section.
-    /// Returns the meta and the section's entry count (so the caller can advance
-    /// `first_chunk_id`).
+    /// `sectors_by_data_start` maps a `sectors` section's own data-start offset
+    /// (`descriptor.offset + SECTION_DESCRIPTOR_SIZE`) to its data-end offset
+    /// (`descriptor.offset + descriptor.section_size`) for every `sectors`
+    /// section in this segment, built once regardless of on-disk order — the
+    /// table's own `base_offset` field is exactly a sectors section's
+    /// data-start offset, by construction, so this is a resolve, not a guess.
     pub(crate) fn read_header(
         &self,
         src: &SegmentSource,
         seg_idx: usize,
         first_chunk_id: usize,
         max_table_entries: usize,
+        sectors_by_data_start: &std::collections::HashMap<u64, u64>,
     ) -> Result<SectionMeta> {
         let hdr_offset = self.desc_offset + SECTION_DESCRIPTOR_SIZE as u64;
         let mut tbl_hdr = [0u8; 24];
@@ -346,6 +374,7 @@ impl TableSectionRef {
             )));
         }
         let base_offset = u64::from_le_bytes(tbl_hdr[8..16].try_into().unwrap_or([0u8; 8]));
+        let sectors_data_end = sectors_by_data_start.get(&base_offset).copied();
 
         Ok(SectionMeta {
             first_chunk_id,
@@ -353,7 +382,7 @@ impl TableSectionRef {
             entries_file_offset: hdr_offset + 24,
             base_offset,
             segment_idx: seg_idx,
-            sectors_data_end: self.sectors_data_end,
+            sectors_data_end,
         })
     }
 }
