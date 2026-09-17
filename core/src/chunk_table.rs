@@ -328,13 +328,15 @@ impl ChunkTable {
 }
 
 /// Section descriptor data the lazy index builder needs from `open()`'s
-/// descriptor walk: the table section's file offset and the segment's
-/// `sectors`-section end (shared across all table sections in that segment).
+/// descriptor walk: just the table section's own file offset. Which
+/// `sectors` section backs it is resolved from `base_offset` (read from the
+/// table's own header, right below) against `sectors_by_data_start`, not
+/// assumed from file position — a `table`/`table2` section is not always
+/// preceded by its own `sectors` section on disk; some real writers emit
+/// the table *before* the sectors data it describes.
 pub(crate) struct TableSectionRef {
     /// Absolute file offset of the `table`/`table2` section descriptor.
     pub(crate) desc_offset: u64,
-    /// End offset of the segment's first `sectors` section (back-fill bound).
-    pub(crate) sectors_data_end: Option<u64>,
 }
 
 impl TableSectionRef {
@@ -342,14 +344,19 @@ impl TableSectionRef {
     /// header (entry count + base offset) — never the per-entry bytes.
     ///
     /// `first_chunk_id` is the running global chunk count before this section.
-    /// Returns the meta and the section's entry count (so the caller can advance
-    /// `first_chunk_id`).
+    /// `sectors_by_data_start` maps a `sectors` section's own data-start offset
+    /// (`descriptor.offset + SECTION_DESCRIPTOR_SIZE`) to its data-end offset
+    /// (`descriptor.offset + descriptor.section_size`) for every `sectors`
+    /// section in this segment, built once regardless of on-disk order — the
+    /// table's own `base_offset` field is exactly a sectors section's
+    /// data-start offset, by construction, so this is a resolve, not a guess.
     pub(crate) fn read_header(
         &self,
         src: &SegmentSource,
         seg_idx: usize,
         first_chunk_id: usize,
         max_table_entries: usize,
+        sectors_by_data_start: &std::collections::HashMap<u64, u64>,
     ) -> Result<SectionMeta> {
         let hdr_offset = self.desc_offset + SECTION_DESCRIPTOR_SIZE as u64;
         let mut tbl_hdr = [0u8; 24];
@@ -367,6 +374,7 @@ impl TableSectionRef {
             )));
         }
         let base_offset = u64::from_le_bytes(tbl_hdr[8..16].try_into().unwrap_or([0u8; 8]));
+        let sectors_data_end = sectors_by_data_start.get(&base_offset).copied();
 
         Ok(SectionMeta {
             first_chunk_id,
@@ -374,7 +382,7 @@ impl TableSectionRef {
             entries_file_offset: hdr_offset + 24,
             base_offset,
             segment_idx: seg_idx,
-            sectors_data_end: self.sectors_data_end,
+            sectors_data_end,
         })
     }
 }

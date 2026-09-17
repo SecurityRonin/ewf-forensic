@@ -463,12 +463,34 @@ impl EwfReader {
             let has_table = descriptors.iter().any(|d| d.section_type == "table");
             let table_type = if has_table { "table" } else { "table2" };
 
-            // Find sectors section end boundary for last-chunk back-fill.
+            // Every `sectors` section's own data-start offset -> data-end
+            // offset, for the last-chunk back-fill — resolved per table via
+            // its own `base_offset` (see `TableSectionRef::read_header`),
+            // not by file position. A segment larger than one table's worth
+            // of chunks (~16 K entries, ~512 MiB) alternates several
+            // `sectors`/`table[2]` pairs; the previous code used a single
+            // `.find()` over the whole segment (the very *first* `sectors`
+            // section's end, reused for every later pair) which silently
+            // corrupted the last chunk of every group after the first one on
+            // a multi-group image — unnoticed because no test fixture here
+            // was ever large enough to have a second pair. A position-based
+            // "most recently seen sectors" tracker is not a fix either: some
+            // real writers emit a `table` section *before* the `sectors`
+            // data it describes (this crate's own synthetic single-group
+            // tests do), so only matching by `base_offset` — the contract
+            // both eager and lazy already rely on — is order-independent in
+            // both directions.
             // Use saturating_add: a crafted section_size = u64::MAX would overflow otherwise.
-            let sectors_data_end: Option<u64> = descriptors
+            let sectors_by_data_start: std::collections::HashMap<u64, u64> = descriptors
                 .iter()
-                .find(|d| d.section_type == "sectors")
-                .map(|d| d.offset.saturating_add(d.section_size));
+                .filter(|d| d.section_type == "sectors")
+                .map(|d| {
+                    (
+                        d.offset.saturating_add(SECTION_DESCRIPTOR_SIZE as u64),
+                        d.offset.saturating_add(d.section_size),
+                    )
+                })
+                .collect();
 
             for desc in &descriptors {
                 match desc.section_type.as_str() {
@@ -510,13 +532,13 @@ impl EwfReader {
                             // + base_offset); per-entry bytes are NOT read here.
                             let section_ref = TableSectionRef {
                                 desc_offset: desc.offset,
-                                sectors_data_end,
                             };
                             let meta = section_ref.read_header(
                                 source,
                                 seg_idx,
                                 next_chunk_id,
                                 MAX_TABLE_ENTRIES,
+                                &sectors_by_data_start,
                             )?;
                             next_chunk_id += meta.entry_count;
                             index.push(meta);
@@ -535,6 +557,7 @@ impl EwfReader {
                                 )));
                             }
                             let base_offset = le_u64(&tbl_hdr, 8);
+                            let sectors_data_end = sectors_by_data_start.get(&base_offset).copied();
 
                             let entries_offset = desc_offset + SECTION_DESCRIPTOR_SIZE as u64 + 24;
                             file.seek(SeekFrom::Start(entries_offset))?;
