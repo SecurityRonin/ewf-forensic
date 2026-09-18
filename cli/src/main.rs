@@ -100,9 +100,21 @@ fn main() {
         Command::Info { ref path, json } => {
             handlers::handle_ewf_info(path).map(|v| format_output(&v, json, format_info))
         }
-        Command::Verify { ref path, json } => {
-            handlers::handle_ewf_verify(path).map(|v| format_output(&v, json, format_verify))
-        }
+        Command::Verify { ref path, json } => handlers::handle_ewf_verify(path).map(|v| {
+            // A FAILED verification must not exit 0. Anything gating on the
+            // status -- a script, a CI step, a chain-of-custody wrapper -- reads
+            // a zero as "this image is sound", which is the opposite of what a
+            // mismatch or a partial read means.
+            let bad = v["md5_match"].as_bool() == Some(false)
+                || v["sha1_match"].as_bool() == Some(false)
+                || v["complete"].as_bool() == Some(false);
+            let out = format_output(&v, json, format_verify);
+            if bad {
+                print!("{out}");
+                std::process::exit(2);
+            }
+            out
+        }),
         Command::Read {
             ref path,
             offset,
@@ -224,6 +236,25 @@ fn format_info(v: &serde_json::Value) -> String {
 
 fn format_verify(v: &serde_json::Value) -> String {
     let mut out = String::new();
+
+    // Completeness FIRST. A digest computed over a partial image says nothing
+    // about the evidence, so the reader's own coverage must be read before the
+    // hashes rather than after them.
+    if v["complete"].as_bool() == Some(false) {
+        let missing = v["missing_bytes"].as_u64().unwrap_or(0);
+        out.push_str(&format!(
+            "INCOMPLETE READ -- the chunk table addresses {} of {} bytes; {missing} \
+bytes ({:.2} GiB) are unreachable.\n\
+A segment, or its trailing `table` section, is missing or truncated. EWF stores \
+each segment's chunk table at the END of that segment, so a truncated segment \
+loses the index for ALL of its chunks -- not just the bytes lost to truncation.\n\
+The digests below are computed over a PARTIAL image and must NOT be compared \
+with the acquisition digest.\n\n",
+            v["addressable_bytes"].as_u64().unwrap_or(0),
+            v["declared_bytes"].as_u64().unwrap_or(0),
+            missing as f64 / 1_073_741_824.0,
+        ));
+    }
 
     out.push_str(&format!(
         "Computed MD5:  {}\n",

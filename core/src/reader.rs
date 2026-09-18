@@ -573,8 +573,14 @@ impl EwfReader {
                         let mut sha1 = [0u8; 20];
                         md5.copy_from_slice(&digest_buf[0..16]);
                         sha1.copy_from_slice(&digest_buf[16..36]);
-                        stored_md5 = Some(md5);
-                        stored_sha1 = Some(sha1);
+                        // EnCase writes the digest section with the fields it
+                        // did not compute left as ZERO. An all-zero digest is
+                        // therefore an ABSENCE, not a value: storing it as
+                        // Some(..) makes every later comparison fail against a
+                        // hash the acquisition never recorded, which reports a
+                        // sound image as mismatched.
+                        stored_md5 = (md5 != [0u8; 16]).then_some(md5);
+                        stored_sha1 = (sha1 != [0u8; 20]).then_some(sha1);
                         log::debug!("parsed digest section: MD5 = {md5:02x?}, SHA-1 = {sha1:02x?}");
                     }
                     "header" if metadata.case_number.is_none() && metadata.os_version.is_none() => {
@@ -1061,11 +1067,21 @@ impl EwfReader {
             _ => None,
         };
 
+        // What the chunk table can actually address, against what the volume
+        // section says the media IS. A short table means segments (or their
+        // tables) are missing: the hash below is then computed over a PARTIAL
+        // image and will not match the acquisition digest. Reporting only the
+        // mismatch would blame the evidence for the reader's incomplete view.
+        let addressable = self.chunk_size() * self.chunk_count() as u64;
+        let declared = self.total_size();
+
         Ok(VerifyResult {
             computed_md5,
             computed_sha1,
             md5_match,
             sha1_match,
+            addressable_bytes: addressable,
+            declared_bytes: declared,
         })
     }
 

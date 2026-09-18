@@ -42,3 +42,6 @@ workspace = true
 
 [[test]]
 name = "segment_rollover"
+
+[[test]]
+name = "verify_completeness"

@@ -25,6 +25,36 @@ pub struct VerifyResult {
     /// `Some(true)` if computed SHA-1 matches stored SHA-1, `Some(false)` if mismatch,
     /// `None` if no stored SHA-1 was present.
     pub sha1_match: Option<bool>,
+    /// Bytes the chunk table can actually address
+    /// (`chunk_size x chunk_count`).
+    pub addressable_bytes: u64,
+    /// Bytes the volume section says the media contains.
+    pub declared_bytes: u64,
+}
+
+impl VerifyResult {
+    /// Whether the chunk table covers the whole declared media.
+    ///
+    /// `false` means segments, or their `table` sections, are missing. EWF
+    /// stores a segment's chunk table at the END of that segment, so a
+    /// truncated segment loses the index for ALL of its chunks, not merely the
+    /// bytes lost to truncation.
+    ///
+    /// This distinction is the difference between two very different findings:
+    /// *"this image does not hash to its acquisition digest"* (a claim about the
+    /// evidence) and *"this reader could only see part of the image"* (a claim
+    /// about the read). A hash mismatch over an incomplete read must never be
+    /// reported as the former.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.addressable_bytes >= self.declared_bytes
+    }
+
+    /// Bytes the chunk table cannot address; `0` when complete.
+    #[must_use]
+    pub fn missing_bytes(&self) -> u64 {
+        self.declared_bytes.saturating_sub(self.addressable_bytes)
+    }
 }
 
 /// Case and acquisition metadata extracted from EWF header sections.

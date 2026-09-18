@@ -45,6 +45,10 @@ pub fn handle_ewf_verify(path: &str) -> Result<Value, String> {
         "computed_sha1": result.computed_sha1.map(|h| hex_string(&h)),
         "md5_match": result.md5_match,
         "sha1_match": result.sha1_match,
+        "complete": result.is_complete(),
+        "addressable_bytes": result.addressable_bytes,
+        "declared_bytes": result.declared_bytes,
+        "missing_bytes": result.missing_bytes(),
     }))
 }
 
