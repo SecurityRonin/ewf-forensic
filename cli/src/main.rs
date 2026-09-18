@@ -43,6 +43,20 @@ enum Command {
         #[arg(short, long, default_value = "512")]
         length: usize,
     },
+    /// List the file-entry tree of a LOGICAL evidence file (.L01)
+    ///
+    /// An L01 holds selected files, not a disk: there is no partition table,
+    /// no filesystem, and no unallocated space. It is enumerated, not mounted.
+    Ls {
+        /// Path to the first segment file (e.g. evidence.L01)
+        path: String,
+        /// Emit one JSON object per entry
+        #[arg(long)]
+        json: bool,
+        /// Print only the summary, not the entries
+        #[arg(long)]
+        summary: bool,
+    },
     /// List all section descriptors across segments
     Sections {
         /// Path to the first segment file (e.g. image.E01)
@@ -97,6 +111,11 @@ fn main() {
             let length = length.min(4096);
             handlers::handle_ewf_read_sectors(path, offset, length).map(|v| format_hex_dump(&v))
         }
+        Command::Ls {
+            ref path,
+            json,
+            summary,
+        } => handle_ls(path, json, summary),
         Command::Sections { ref path, json } => handlers::handle_ewf_list_sections(path)
             .map(|v| format_output(&v, json, format_sections)),
         Command::Search {
@@ -316,6 +335,93 @@ fn format_extract(v: &serde_json::Value) -> String {
         v["offset"],
         v["output"].as_str().unwrap_or("?")
     )
+}
+
+/// List a logical evidence file's entry tree.
+///
+/// Paths are reconstructed by walking parents, so what an examiner sees is the
+/// structure recorded at acquisition rather than a flat bag of names.
+fn handle_ls(path: &str, json: bool, summary: bool) -> Result<String, String> {
+    use std::fmt::Write as _;
+
+    let p = std::path::Path::new(path);
+    let (header, body) = ewf::logical::find_ltree(p).map_err(|e| format!("{e}"))?;
+
+    // Verify before reporting: on a logical acquisition the tree IS the
+    // evidence, so an unverified listing is a claim with nothing behind it.
+    use md5::{Digest as _, Md5};
+    let computed = <[u8; 16]>::from(Md5::digest(&body));
+    let integrity = if computed == header.data_md5 {
+        "VERIFIED (ltree matches its stored MD5)"
+    } else {
+        "FAILED — the file tree does not match the MD5 stored with it"
+    };
+
+    let (text, replaced) = ewf::logical::decode_ltree_text(&body);
+    let tree = ewf::logical::parse_entry_tree(&text).map_err(|e| format!("{e}"))?;
+
+    let full_path = |i: usize| -> String {
+        let mut parts = Vec::new();
+        let mut cur = Some(i);
+        while let Some(k) = cur {
+            let e = &tree.entries[k];
+            if !e.name.is_empty() {
+                parts.push(e.name.clone());
+            }
+            cur = e.parent;
+        }
+        parts.reverse();
+        parts.join("/")
+    };
+
+    let files = tree.entries.iter().filter(|e| !e.is_dir).count();
+    let dirs = tree.entries.len() - files;
+    let bytes: u64 = tree
+        .entries
+        .iter()
+        .filter(|e| !e.is_dir)
+        .map(|e| e.size)
+        .sum();
+
+    let mut out = String::new();
+    if !summary {
+        for (i, e) in tree.entries.iter().enumerate() {
+            if json {
+                let _ = writeln!(
+                    out,
+                    r#"{{"path":{:?},"dir":{},"size":{},"md5":{:?},"id":{}}}"#,
+                    full_path(i),
+                    e.is_dir,
+                    e.size,
+                    e.md5.clone().unwrap_or_default(),
+                    e.id
+                );
+            } else {
+                let _ = writeln!(
+                    out,
+                    "{}{:>12}  {}  {}",
+                    if e.is_dir { "d" } else { "-" },
+                    e.size,
+                    e.md5.as_deref().unwrap_or("-".repeat(32).as_str()),
+                    full_path(i)
+                );
+            }
+        }
+    }
+    let _ = writeln!(
+        out,
+        "\n  entries: {}  ({files} files, {dirs} directories)\n  \
+         logical size: {bytes} bytes\n  indicators declared by the file: {}\n  \
+         ltree integrity: {integrity}\n  unpaired UTF-16 units replaced: {replaced}\n  \
+         parse warnings: {}",
+        tree.entries.len(),
+        tree.indicators.len(),
+        tree.warnings.len()
+    );
+    for w in tree.warnings.iter().take(10) {
+        let _ = writeln!(out, "    warning: {w}");
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

@@ -148,25 +148,36 @@ pub fn decode_ltree_text(data: &[u8]) -> (String, usize) {
 /// Parse the `entry` category of an `ltree` body into a tree.
 ///
 /// # Errors
-/// [`EwfError::InvalidSignature`] when no `entry` category is present.
+/// [`EwfError::MalformedLogicalField`] when no `entry` category is present.
 pub fn parse_entry_tree(text: &str) -> Result<LogicalTree> {
     // Lines are newline-delimited; a stray CR is stripped rather than carried
     // into a file name.
     let lines: Vec<&str> = text.split('\n').map(|l| l.trim_end_matches('\r')).collect();
 
-    let cat = lines
-        .iter()
-        .position(|l| *l == "entry")
-        .ok_or(EwfError::InvalidSignature)?;
+    let cat = lines.iter().position(|l| *l == "entry").ok_or_else(|| {
+        EwfError::MalformedLogicalField {
+            field: "ltree category",
+            value: "no `entry` category in the ltree text".to_owned(),
+        }
+    })?;
     // entry / <count>\t1 / <indicators> / then the category root and entries.
     let indicators: Vec<String> = lines
         .get(cat + 2)
-        .ok_or(EwfError::InvalidSignature)?
+        .ok_or_else(|| EwfError::MalformedLogicalField {
+            field: "ltree indicators",
+            value: format!(
+                "ltree ends at line {}, before the indicator row",
+                lines.len()
+            ),
+        })?
         .split('\t')
         .map(str::to_owned)
         .collect();
     if indicators.is_empty() {
-        return Err(EwfError::InvalidSignature);
+        return Err(EwfError::MalformedLogicalField {
+            field: "ltree indicators",
+            value: "indicator row is empty".to_owned(),
+        });
     }
 
     let mut tree = LogicalTree {
@@ -180,7 +191,12 @@ pub fn parse_entry_tree(text: &str) -> Result<LogicalTree> {
         .get(cursor)
         .and_then(|l| l.split('\t').nth(1))
         .and_then(|v| v.trim().parse::<usize>().ok())
-        .ok_or(EwfError::InvalidSignature)?;
+        .ok_or_else(|| EwfError::MalformedLogicalField {
+            field: "ltree root sub-count",
+            value: lines
+                .get(cursor)
+                .map_or_else(|| format!("no line at index {cursor}"), |l| (*l).to_owned()),
+        })?;
     cursor += 2; // root's two lines
 
     for _ in 0..root_subs {
@@ -286,12 +302,15 @@ fn parse_one(
 /// a damaged tree indistinguishable from a sound one.
 ///
 /// # Errors
-/// [`EwfError::Io`] on a read failure; [`EwfError::InvalidSignature`] when no
-/// segment carries an `ltree`, or a segment is not an EWF v1 container.
+/// [`EwfError::Io`] on a read failure; [`EwfError::NotLogicalEvidence`] when no
+/// segment carries an `ltree` — which for a valid EVF container means it is a
+/// PHYSICAL image, not a damaged one.
 pub fn find_ltree(first_segment: &std::path::Path) -> Result<(LtreeHeader, Vec<u8>)> {
     use std::io::{Read as _, Seek as _, SeekFrom};
 
+    let mut searched = 0usize;
     for path in segment_paths(first_segment) {
+        searched += 1;
         let mut f = std::fs::File::open(&path)?;
         let mut hdr = [0u8; crate::sections::FILE_HEADER_SIZE];
         if f.read_exact(&mut hdr).is_err() {
@@ -342,35 +361,86 @@ pub fn find_ltree(first_segment: &std::path::Path) -> Result<(LtreeHeader, Vec<u
             off = desc.next;
         }
     }
-    Err(EwfError::InvalidSignature)
+    // Every segment parsed as a container and none carried an `ltree`. That is
+    // not a signature problem: it is what a PHYSICAL image looks like.
+    Err(EwfError::NotLogicalEvidence { segments: searched })
 }
 
 /// Segment file paths for an EnCase set, derived from any one of them.
 ///
 /// EnCase numbers segments `.L01`, `.L02`, … and the case of the extension
 /// follows whatever the acquisition tool wrote, so both are tried.
+/// The canonical EnCase segment extension for the 1-based segment `n`.
+///
+/// EnCase numbers segments `x01`…`x99` and then rolls over to LETTERS:
+/// `xAA`, `xAB`, … `xAZ`, `xBA`, … `xZZ`. A reader that stops at 99 does not
+/// error — it reports the tail as absent, which on a large acquisition means
+/// silently addressing a fraction of the evidence.
+///
+/// Not hypothetical: a real 478-segment image is `E01`…`E99` then `EAA`…`EOO`,
+/// i.e. 99 numeric and **379** alpha segments.
+///
+/// Returns `None` past `xZZ` (99 + 676 = 775 segments), the end of the scheme.
+fn segment_ext(prefix: char, n: u32) -> Option<String> {
+    if n == 0 {
+        return None;
+    }
+    if n <= 99 {
+        return Some(format!("{prefix}{n:02}"));
+    }
+    let i = n - 100; // 0-based index into AA..ZZ
+    if i >= 26 * 26 {
+        return None;
+    }
+    let hi = u8::try_from(i / 26).ok()? + b'A';
+    let lo = u8::try_from(i % 26).ok()? + b'A';
+    Some(format!("{prefix}{}{}", hi as char, lo as char))
+}
+
+/// Segment file paths for an EnCase set, derived from any one of them.
+///
+/// Enumeration **stops at the first gap**. A missing middle segment means an
+/// incomplete set; jumping the hole and continuing would assemble evidence from
+/// a discontiguous run and report nothing wrong.
 fn segment_paths(first: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut out = vec![first.to_path_buf()];
     let Some(stem) = first.file_stem() else {
         return out;
     };
-    let upper = first
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.chars().next().is_some_and(char::is_uppercase));
+    // Follow the case of the input: EnCase writes upper-case extensions, but a
+    // copied set may be lower-cased by a case-insensitive transfer.
+    let Some(ext0) = first.extension().and_then(|e| e.to_str()) else {
+        return out;
+    };
+    let upper = ext0.chars().next().is_some_and(char::is_uppercase);
+    let prefix = if upper { 'L' } else { 'l' };
     let dir = first.parent().unwrap_or(std::path::Path::new("."));
-    for n in 1..=99u32 {
-        let ext = if upper {
-            format!("L{n:02}")
-        } else {
-            format!("l{n:02}")
+    let stem = stem.to_string_lossy();
+
+    for n in 2..=775u32 {
+        let Some(ext) = segment_ext(prefix, n) else {
+            break;
         };
-        let p = dir.join(format!("{}.{}", stem.to_string_lossy(), ext));
-        if p.is_file() && p != first {
+        let p = dir.join(format!("{stem}.{ext}"));
+        if !p.is_file() {
+            break;
+        }
+        if p != first {
             out.push(p);
         }
     }
     out
+}
+
+/// Test-only view of [`segment_paths`].
+///
+/// The enumeration is a private detail, but it is also where a silent
+/// evidence-loss bug lives, so it is reachable from an integration test rather
+/// than only exercised through a full image.
+#[doc(hidden)]
+#[must_use]
+pub fn segment_paths_for_test(first: &std::path::Path) -> Vec<std::path::PathBuf> {
+    segment_paths(first)
 }
 
 /// The authoritative media size for an EWF container.
@@ -423,29 +493,48 @@ pub struct Extent {
 /// relative to the start of the media data.
 ///
 /// # Errors
-/// [`EwfError::InvalidSignature`] when the value is not shaped as the format
+/// [`EwfError::MalformedLogicalField`] when the value is not shaped as the format
 /// describes.
 pub fn parse_binary_extents(value: &str) -> Result<Vec<Extent>> {
     let mut it = value.split_whitespace();
-    let count: usize = it
-        .next()
-        .and_then(|v| v.parse().ok())
-        .ok_or(EwfError::InvalidSignature)?;
+    let count: usize =
+        it.next()
+            .and_then(|v| v.parse().ok())
+            .ok_or_else(|| EwfError::MalformedLogicalField {
+                field: "be extent count",
+                value: value.to_owned(),
+            })?;
 
     let mut out = Vec::with_capacity(count.min(1024));
     for _ in 0..count {
         // A leading non-hex token is a type flag; only "S" (sparse) is defined,
         // and an unknown flag is carried as non-sparse rather than refused --
         // refusing would lose the whole acquisition over one annotation.
-        let mut tok = it.next().ok_or(EwfError::InvalidSignature)?;
+        let mut tok = it.next().ok_or_else(|| EwfError::MalformedLogicalField {
+            field: "be",
+            value: value.to_string(),
+        })?;
         let mut sparse = false;
         while tok.eq_ignore_ascii_case("s") || u64::from_str_radix(tok, 16).is_err() {
             sparse |= tok.eq_ignore_ascii_case("s");
-            tok = it.next().ok_or(EwfError::InvalidSignature)?;
+            tok = it.next().ok_or_else(|| EwfError::MalformedLogicalField {
+                field: "be",
+                value: value.to_string(),
+            })?;
         }
-        let offset = u64::from_str_radix(tok, 16).map_err(|_| EwfError::InvalidSignature)?;
-        let size_tok = it.next().ok_or(EwfError::InvalidSignature)?;
-        let size = u64::from_str_radix(size_tok, 16).map_err(|_| EwfError::InvalidSignature)?;
+        let offset = u64::from_str_radix(tok, 16).map_err(|_| EwfError::MalformedLogicalField {
+            field: "be offset",
+            value: tok.to_string(),
+        })?;
+        let size_tok = it.next().ok_or_else(|| EwfError::MalformedLogicalField {
+            field: "be size",
+            value: value.to_string(),
+        })?;
+        let size =
+            u64::from_str_radix(size_tok, 16).map_err(|_| EwfError::MalformedLogicalField {
+                field: "be size",
+                value: size_tok.to_string(),
+            })?;
         out.push(Extent {
             offset,
             size,
@@ -459,7 +548,7 @@ impl LogicalEntry {
     /// The extents locating this entry's data in the media stream.
     ///
     /// # Errors
-    /// [`EwfError::InvalidSignature`] when the stored `be` value is malformed.
+    /// [`EwfError::MalformedLogicalField`] when the stored `be` value is malformed.
     pub fn extents(&self) -> Result<Vec<Extent>> {
         match self.raw.get("be").map(String::as_str) {
             None | Some("") => Ok(Vec::new()),
@@ -477,14 +566,22 @@ impl LogicalTree {
     /// that was never part of the file.
     ///
     /// # Errors
-    /// [`EwfError::Io`] on a read failure, or [`EwfError::InvalidSignature`]
+    /// [`EwfError::Io`] on a read failure, or [`EwfError::MalformedLogicalField`]
     /// when the entry's extents are malformed.
     pub fn read_entry<R: std::io::Read + std::io::Seek>(
         &self,
         media: &mut R,
         index: usize,
     ) -> Result<Vec<u8>> {
-        let entry = self.entries.get(index).ok_or(EwfError::InvalidSignature)?;
+        // An out-of-range index is a CALLER error, not a damaged image; name
+        // both numbers rather than implying the evidence is at fault.
+        let entry = self
+            .entries
+            .get(index)
+            .ok_or_else(|| EwfError::MalformedLogicalField {
+                field: "entry index",
+                value: format!("index {index} of {} entries", self.entries.len()),
+            })?;
         if entry.is_dir {
             return Ok(Vec::new());
         }

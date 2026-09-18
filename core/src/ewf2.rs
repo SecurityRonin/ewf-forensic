@@ -143,7 +143,9 @@ impl Ewf2FileHeader {
         } else if buf[0..8] == LEF2_SIGNATURE {
             false
         } else {
-            return Err(EwfError::InvalidSignature);
+            let mut found = [0u8; 8];
+            found.copy_from_slice(&buf[0..8]);
+            return Err(EwfError::InvalidSignature { found });
         };
 
         let major_version = buf[8];

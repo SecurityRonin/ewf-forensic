@@ -11,9 +11,9 @@
 //! - Case metadata, stored hashes, and acquisition error parsing
 
 mod chunk_table;
-pub mod logical;
 mod error;
 pub(crate) mod ewf2;
+pub mod logical;
 mod parse;
 mod reader;
 /// EWF v1 on-disk structural primitives: signatures, descriptor / volume /
@@ -80,7 +80,7 @@ mod tests {
     fn parse_file_header_rejects_invalid_signature() {
         let buf = [0u8; 13];
         let result = EwfFileHeader::parse(&buf);
-        assert!(matches!(result, Err(EwfError::InvalidSignature)));
+        assert!(matches!(result, Err(EwfError::InvalidSignature { .. })));
     }
 
     #[test]

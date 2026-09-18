@@ -7,8 +7,41 @@ pub enum EwfError {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
 
-    #[error("invalid EWF signature")]
-    InvalidSignature,
+    #[error("invalid EWF signature: found {found:02x?}, expected EVF (physical) or LVF (logical)")]
+    InvalidSignature {
+        /// The eight bytes actually read, so the caller can see what this is.
+        found: [u8; 8],
+    },
+
+    /// The container is a valid EWF image, but a PHYSICAL one, and the
+    /// operation needs a logical evidence file.
+    ///
+    /// Distinct from [`Self::InvalidSignature`] on purpose. A physical E01 is
+    /// not damaged and its signature is perfectly valid — it simply has no
+    /// `ltree` section, because a disk image holds sectors rather than a file
+    /// tree. Reporting that as a bad signature sends an examiner hunting for
+    /// corruption in a sound image.
+    #[error(
+        "no file-entry tree: this is a PHYSICAL evidence file (EVF/.E01), which images a disk \
+         and has no `ltree` section. `ls` enumerates a LOGICAL evidence file (LVF/.L01). \
+         Searched {segments} segment(s)."
+    )]
+    NotLogicalEvidence {
+        /// How many segment files were searched for an `ltree`.
+        segments: usize,
+    },
+
+    /// A logical entry's field could not be decoded.
+    ///
+    /// Carries the field name and the offending value verbatim, because
+    /// "malformed" without the bytes is not a diagnosis.
+    #[error("malformed logical entry field `{field}`: {value:?}")]
+    MalformedLogicalField {
+        /// Which field failed to decode (e.g. `be`, `du`).
+        field: &'static str,
+        /// The value as stored, verbatim.
+        value: String,
+    },
 
     #[error("buffer too short: expected {expected}, got {got}")]
     BufferTooShort { expected: usize, got: usize },

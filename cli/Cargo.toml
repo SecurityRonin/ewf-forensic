@@ -17,6 +17,8 @@ name = "ewf"
 path = "src/main.rs"
 
 [dependencies]
+# Verify the ltree against the MD5 stored with it before reporting a listing.
+md-5 = { workspace = true }
 ewf = { workspace = true }
 clap = { workspace = true }
 glob = { workspace = true }

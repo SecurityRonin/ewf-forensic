@@ -39,3 +39,6 @@ md-5 = { workspace = true }
 
 [lints]
 workspace = true
+
+[[test]]
+name = "segment_rollover"

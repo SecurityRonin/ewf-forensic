@@ -93,13 +93,22 @@ impl EwfFileHeader {
                 got: buf.len(),
             });
         }
-        if buf[0..8] != EVF_SIGNATURE {
-            return Err(EwfError::InvalidSignature);
-        }
+        // Report the container, never infer it: the two signatures are the only
+        // thing distinguishing a bitstream image from a file-entry tree, and
+        // every byte after them is identical.
+        let kind = match &buf[0..8] {
+            b if b == EVF_SIGNATURE => EwfKind::Physical,
+            b if b == LVF_SIGNATURE => EwfKind::Logical,
+            other => {
+                let mut found = [0u8; 8];
+                found.copy_from_slice(other);
+                return Err(EwfError::InvalidSignature { found });
+            }
+        };
         let segment_number = u16::from_le_bytes([buf[9], buf[10]]);
         Ok(Self {
             segment_number,
-            kind: EwfKind::Physical,
+            kind,
         })
     }
 }
