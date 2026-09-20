@@ -4,6 +4,26 @@ All notable changes to `ewf` (the reader) are documented here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-v0.4.10...ewf-v0.5.0) - 2026-09-20
+
+### Added
+
+- *(l01)* extract file contents; verified against EnCase's own MD5
+- *(l01)* GREEN - logical media size and binary extents
+- *(l01)* locate the ltree across segments; validate on real evidence
+- *(l01)* GREEN - name-indexed entry tree with lenient UTF-16
+- *(l01)* GREEN - ltree header integrity values
+
+### Fixed
+
+- *(verify)* never present a hash over a PARTIAL image as a verdict
+- *(logical)* stop losing segments past 99, and stop blaming the signature
+- *(l01)* retract a documented capability that does not exist
+
+### Other
+
+- Merge main, re-expressing the ewfexport install as a fleet-ci input
+
 ## [0.4.10](https://github.com/SecurityRonin/ewf-forensic/compare/ewf-v0.4.9...ewf-v0.4.10) - 2026-08-08
 
 ### Documentation
