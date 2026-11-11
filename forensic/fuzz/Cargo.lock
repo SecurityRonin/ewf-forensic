@@ -164,7 +164,7 @@ dependencies = [
 
 [[package]]
 name = "ewf"
-version = "0.4.7"
+version = "0.4.10"
 dependencies = [
  "adler2",
  "flate2",
@@ -173,13 +173,14 @@ dependencies = [
  "lru",
  "md-5",
  "rayon",
+ "safe-read",
  "sha-1",
  "thiserror",
 ]
 
 [[package]]
 name = "ewf-forensic"
-version = "0.7.2"
+version = "0.7.6"
 dependencies = [
  "ewf",
  "flate2",
@@ -495,6 +496,12 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "safe-read"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "736a7e46a222ed0f1f8724f0aa0d6a2e86d676cda2b35bcdd4d4e31f7b508f65"
 
 [[package]]
 name = "sha-1"
