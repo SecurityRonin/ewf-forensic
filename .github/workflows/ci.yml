@@ -31,3 +31,7 @@ jobs:
       # paths (or annotating the provably-dead arms), then delete these two lines.
       coverage-gate: floor
       coverage-floor: 85
+      # The fleet coverage scope (ADR-0008): binary entry points
+      # (src/main.rs, src/bin/) are excluded from measurement, as in every
+      # other fleet repo. This narrows what is measured, not the floor.
+      coverage-ignore-regex: '(^|/)src/(main\.rs|bin/)'
